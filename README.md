@@ -6,7 +6,7 @@ NanoGrid는 AWS EC2 기반의 초경량 FaaS(Function as a Service) 플랫폼입
 
 NanoGrid는 Event-Driven Architecture를 기반으로 설계되었습니다.
 
-```
+```mermaid
 graph LR
     User[Client] -- API Key Auth --> ALB[Application Load Balancer]
     ALB -- Port 8080 --> Controller[Node.js Controller]
