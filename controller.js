@@ -10,9 +10,9 @@ const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const PORT = 8080;
-const VERSION = "v2.0 (Secured Edition)";
+const VERSION = "v2.1";
 
-// 필수 환경변수 검증 (API Key 추가됨)
+// 필수 환경변수 검증
 const REQUIRED_ENV = ['AWS_REGION', 'BUCKET_NAME', 'TABLE_NAME', 'SQS_URL', 'REDIS_HOST', 'NANOGRID_API_KEY'];
 const missingEnv = REQUIRED_ENV.filter(key => !process.env[key]);
 if (missingEnv.length > 0) {
@@ -49,23 +49,56 @@ redis.on('connect', () => {
 
 app.use(express.json());
 
-// [Security] 보안 미들웨어 (경비원)
+// [Security Middleware 1] 인증 (Authentication)
 const authenticate = (req, res, next) => {
-    // 1. 헤더에서 키를 꺼낸다.
     const clientKey = req.headers['x-api-key'];
     const serverKey = process.env.NANOGRID_API_KEY;
 
-    // 2. 키가 없거나 틀리면 쫓아낸다.
     if (!clientKey || clientKey !== serverKey) {
         console.warn(`⛔ Unauthorized access attempt from ${req.ip}`);
         return res.status(401).json({ error: "Unauthorized: Invalid or missing API Key" });
     }
-
-    // 3. 맞으면 통과시킨다.
     next();
 };
 
-// 0. 상세 헬스 체크 (로드 밸런서는 인증 없이 통과시켜야 함)
+//  [Security Middleware 2] 속도 제한 (Rate Limiting via Redis)
+// 1분(60초)에 최대 100회 요청 허용
+const RATE_LIMIT_WINDOW = 60; 
+const RATE_LIMIT_MAX = 100;
+
+const rateLimiter = async (req, res, next) => {
+    try {
+        const ip = req.ip || req.connection.remoteAddress;
+        const key = `ratelimit:${ip}`;
+        
+        // Redis Transaction: 카운터 증가 + 만료시간 설정
+        const current = await redis.incr(key);
+        
+        if (current === 1) {
+            await redis.expire(key, RATE_LIMIT_WINDOW);
+        }
+
+        // 헤더에 남은 횟수 정보 제공 (친절함)
+        res.set('X-RateLimit-Limit', RATE_LIMIT_MAX);
+        res.set('X-RateLimit-Remaining', Math.max(0, RATE_LIMIT_MAX - current));
+
+        if (current > RATE_LIMIT_MAX) {
+            console.warn(`🔥 Rate limit exceeded for IP: ${ip}`);
+            return res.status(429).json({ 
+                error: "Too Many Requests", 
+                message: "Please slow down. You have exceeded the rate limit." 
+            });
+        }
+        
+        next();
+    } catch (error) {
+        // Redis 에러가 나도 비즈니스 로직은 돌아가게 통과 (Fail Open)
+        console.error("⚠️ Rate Limiter Error:", error.message);
+        next();
+    }
+};
+
+// 0. 상세 헬스 체크
 app.get('/health', (req, res) => {
     const status = isRedisConnected ? 200 : 503;
     res.status(status).json({
@@ -76,21 +109,8 @@ app.get('/health', (req, res) => {
     });
 });
 
-// 1. 코드 업로드 (POST /upload) -> 인증 필요
-const upload = multer({
-    storage: multerS3({
-        s3: s3,
-        bucket: process.env.BUCKET_NAME,
-        key: function (req, file, cb) {
-            const functionId = uuidv4();
-            req.functionId = functionId; 
-            cb(null, `functions/${functionId}/v1.zip`); 
-        }
-    })
-});
-
-// authenticate 미들웨어를 중간에 끼워넣음
-app.post('/upload', authenticate, upload.single('file'), async (req, res) => {
+// 1. 코드 업로드 -> 인증 + 속도제한
+app.post('/upload', authenticate, rateLimiter, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: "File upload failed or no file provided" });
@@ -103,7 +123,6 @@ app.post('/upload', authenticate, upload.single('file'), async (req, res) => {
         };
 
         const body = req.body || {};
-        
         const functionId = safeString(req.functionId, uuidv4());
         const fallbackKey = `functions/${functionId}/v1.zip`;
         const s3Key = safeString(req.file.key, fallbackKey);
@@ -137,9 +156,8 @@ app.post('/upload', authenticate, upload.single('file'), async (req, res) => {
     }
 });
 
-// 2. 함수 실행 (POST /run) -> 인증 필요
-// authenticate 미들웨어를 중간에 끼워넣음
-app.post('/run', authenticate, async (req, res) => {
+// 2. 함수 실행 -> 인증 + 속도제한
+app.post('/run', authenticate, rateLimiter, async (req, res) => {
     const { functionId, inputData } = req.body || {};
     
     if (!functionId) {
@@ -226,7 +244,7 @@ function waitForResult(requestId) {
 
 const server = app.listen(PORT, () => {
     console.log(`🚀 NanoGrid Controller ${VERSION} Started on port ${PORT}`);
-    console.log(`   🔒 Security Level: High (API Key Required)`);
+    console.log(`   🔒 Security: API Key Auth + Redis Rate Limiting Enabled`);
     console.log(`   - Mode: EC2 Native (No Lambda)`);
 });
 
