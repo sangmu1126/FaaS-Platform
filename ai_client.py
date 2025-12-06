@@ -1,15 +1,17 @@
 import os
 import json
+import time
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import sys
 
 class AIClient:
     def __init__(self):
         self.endpoint = os.environ.get("AI_ENDPOINT", "http://10.0.20.100:11434")
         self.default_model = os.environ.get("LLM_MODEL", "llama3:8b")
-        self.output_dir = "/output"
-
+        self.output_dir = "/output" # Standard path in container
+        
         # Retry Strategy
         retry_strategy = Retry(
             total=3,
@@ -28,27 +30,17 @@ class AIClient:
                 "prompt_eval_count": response_data.get("prompt_eval_count", 0),
                 "eval_count": response_data.get("eval_count", 0)
             }
-            usage_file = os.path.join(self.output_dir, ".llm_usage_stats.json")
+            # Append to usage file (Thread-safe append)
+            usage_file = os.path.join(self.output_dir, ".llm_usage_stats.jsonl")
             
-            current_total = {"prompt_eval_count": 0, "eval_count": 0}
-            if os.path.exists(usage_file):
-                with open(usage_file, 'r') as f:
-                    try:
-                        current_total = json.load(f)
-                    except:
-                        pass
-            
-            current_total["prompt_eval_count"] += usage["prompt_eval_count"]
-            current_total["eval_count"] += usage["eval_count"]
-            
-            with open(usage_file, 'w') as f:
-                json.dump(current_total, f)
+            with open(usage_file, 'a') as f:
+                f.write(json.dumps(usage) + "\n")
                 
         except Exception as e:
+            # Silently fail to not disrupt user code, but could log if possible
             pass
 
     def generate(self, prompt, model=None, **kwargs):
-        """Generate text from the LLM API."""
         model = model or self.default_model
         payload = {
             "model": model,
@@ -64,11 +56,10 @@ class AIClient:
             self._record_usage(data)
             return data.get("response", "")
         except Exception as e:
-            print(f"AI Generation Error: {e}")
+            sys.stderr.write(f"AI Generation Error: {e}\n")
             raise
 
     def chat(self, messages, model=None, **kwargs):
-        """Chat with the LLM API using messages format."""
         model = model or self.default_model
         payload = {
             "model": model,
@@ -84,17 +75,14 @@ class AIClient:
             self._record_usage(data)
             return data.get("message", {}).get("content", "")
         except Exception as e:
-            print(f"AI Chat Error: {e}")
+            sys.stderr.write(f"AI Chat Error: {e}\n")
             raise
-
 
 # Singleton instance
 client = AIClient()
 
 def generate(prompt, model=None, **kwargs):
-    """Module-level helper function for text generation."""
     return client.generate(prompt, model, **kwargs)
 
 def chat(messages, model=None, **kwargs):
-    """Module-level helper function for chat."""
     return client.chat(messages, model, **kwargs)
