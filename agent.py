@@ -83,7 +83,9 @@ class NanoAgent:
                 s3_key=body["s3Key"],
                 runtime=body.get("runtime", "python"),
                 s3_key=body["s3Key"],
+                s3_bucket=body.get("s3Bucket"),
                 memory_mb=body.get("memoryMb", 128),
+                timeout_ms=body.get("timeoutMs", 300000),
                 payload=body.get("input", {})
             )
             
