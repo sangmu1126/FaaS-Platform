@@ -7,6 +7,7 @@ import boto3
 import redis
 import structlog
 from dotenv import load_dotenv
+from prometheus_client import start_http_server, Counter, Histogram, Gauge
 
 from executor import TaskExecutor, TaskMessage
 
@@ -41,6 +42,11 @@ class NanoAgent:
         self.executor = TaskExecutor(self.config)
         self.running = True
 
+        # Prometheus Metrics
+        self.jobs_processed = Counter('worker_jobs_processed_total', 'Total jobs processed', ['status', 'runtime'])
+        self.job_duration = Histogram('worker_job_duration_seconds', 'Job execution duration in seconds', ['runtime'])
+        self.active_jobs = Gauge('worker_active_jobs', 'Number of jobs currently running')
+
         signal.signal(signal.SIGINT, self._stop)
         signal.signal(signal.SIGTERM, self._stop)
 
@@ -51,6 +57,13 @@ class NanoAgent:
     def run(self):
         queue_url = self.config["SQS_QUEUE_URL"]
         logger.info("📡 Listening for tasks", queue=queue_url)
+
+        # Start Metrics Server
+        try:
+            start_http_server(8000)
+            logger.info("Prometheus Metrics Server Started", port=8000)
+        except Exception as e:
+            logger.error("Failed to start metrics server", error=str(e))
 
         while self.running:
             try:
@@ -74,13 +87,13 @@ class NanoAgent:
         logger.info("👋 Agent stopped cleanly")
 
     def _process_message(self, queue_url, msg):
+        task = None # Initialize task to None for error handling
         try:
+            self.active_jobs.inc() # Increment active jobs gauge
             body = json.loads(msg["Body"])
             task = TaskMessage(
                 request_id=body["requestId"],
                 function_id=body.get("functionId", "unknown"),
-                runtime=body.get("runtime", "python"),
-                s3_key=body["s3Key"],
                 runtime=body.get("runtime", "python"),
                 s3_key=body["s3Key"],
                 s3_bucket=body.get("s3Bucket"),
