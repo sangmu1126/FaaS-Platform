@@ -43,8 +43,8 @@ class NanoAgent:
         self.running = True
 
         # Prometheus Metrics
-        self.jobs_processed = Counter('worker_jobs_processed_total', 'Total jobs processed', ['status', 'runtime'])
-        self.job_duration = Histogram('worker_job_duration_seconds', 'Job execution duration in seconds', ['runtime'])
+        self.jobs_processed = Counter('worker_jobs_processed_total', 'Total jobs processed', ['status', 'runtime', 'model'])
+        self.job_duration = Histogram('worker_job_duration_seconds', 'Job execution duration in seconds', ['runtime', 'model'])
         self.active_jobs = Gauge('worker_active_jobs', 'Number of jobs currently running')
 
         signal.signal(signal.SIGINT, self._stop)
@@ -99,7 +99,8 @@ class NanoAgent:
                 s3_bucket=body.get("s3Bucket"),
                 memory_mb=body.get("memoryMb", 128),
                 timeout_ms=body.get("timeoutMs", 300000),
-                payload=body.get("input", {})
+                payload=body.get("input", {}),
+                model_id=body.get("modelId", "llama3:8b")
             )
             
             logger.info("🚀 Processing Task", id=task.request_id, runtime=task.runtime)
@@ -125,12 +126,12 @@ class NanoAgent:
 
             # Metrics Update
             status = "success" if result.success else "failure"
-            self.jobs_processed.labels(status=status, runtime=task.runtime).inc()
-            self.job_duration.labels(runtime=task.runtime).observe(result.duration_ms / 1000.0)
+            self.jobs_processed.labels(status=status, runtime=task.runtime, model=task.model_id).inc()
+            self.job_duration.labels(runtime=task.runtime, model=task.model_id).observe(result.duration_ms / 1000.0)
 
         except Exception as e:
             logger.error("Task processing failed", error=str(e))
-            self.jobs_processed.labels(status="error", runtime="unknown").inc()
+            self.jobs_processed.labels(status="error", runtime=task.runtime if task else "unknown", model=task.model_id if task else "unknown").inc()
             
         finally:
             self.active_jobs.dec()

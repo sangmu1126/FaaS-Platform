@@ -30,13 +30,16 @@ class OutputUploader:
                 if os.path.isfile(filepath):
                     s3_key = f'outputs/{job_id}/{filename}'
                     
-                    logger.info("Uploading output file", job_id=job_id, file=filename)
-                    self.s3.upload_file(filepath, self.bucket, s3_key)
-                    
-                    # URL 생성 (Public Read 가정 또는 Presigned URL 필요 시 변경)
-                    # 여기서는 표준 Public URL 형식 사용
-                    url = f'https://{self.bucket}.s3.{self.region}.amazonaws.com/{s3_key}'
-                    uploaded_urls.append(url)
+                    if self.bucket:
+                        logger.info("Uploading output file", job_id=job_id, file=filename)
+                        self.s3.upload_file(filepath, self.bucket, s3_key)
+                        
+                        # URL 생성 (Public Read 가정 또는 Presigned URL 필요 시 변경)
+                        # 여기서는 표준 Public URL 형식 사용
+                        url = f'https://{self.bucket}.s3.{self.region}.amazonaws.com/{s3_key}'
+                        uploaded_urls.append(url)
+                    else:
+                         logger.warning("Skipping upload: No bucket configured", file=filename)
                     
         except Exception as e:
             logger.error("Failed to upload outputs", job_id=job_id, error=str(e))

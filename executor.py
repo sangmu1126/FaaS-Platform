@@ -1,8 +1,6 @@
 import os
 import shutil
 import time
-import shutil
-import time
 import zipfile
 import json
 import structlog
@@ -24,11 +22,11 @@ class TaskMessage:
     function_id: str
     runtime: str
     s3_key: str
-    s3_key: str
     s3_bucket: Optional[str] = None
     memory_mb: int = 128
     timeout_ms: int = 300000
     payload: Dict = field(default_factory=dict)
+    model_id: str = "llama3:8b"
 
 @dataclass
 class ExecutionResult:
@@ -43,6 +41,7 @@ class ExecutionResult:
     optimization_tip: Optional[str] = None
     estimated_savings: Optional[str] = None
     output_files: List[str] = field(default_factory=list)
+    llm_token_count: Optional[int] = 0 # Feature 3: Usage Metering
 
     def to_dict(self):
         return {
@@ -53,10 +52,10 @@ class ExecutionResult:
             "stderr": self.stderr,
             "durationMs": self.duration_ms,
             "peakMemoryBytes": self.peak_memory_bytes,
-            "allocatedMemoryMb": self.allocated_memory_mb,
             "optimizationTip": self.optimization_tip,
             "estimatedSavings": self.estimated_savings,
-            "outputFiles": self.output_files
+            "outputFiles": self.output_files,
+            "llm_token_count": self.llm_token_count
         }
 
 # --- Service Logic ---
@@ -211,7 +210,7 @@ class TaskExecutor:
         bucket = task.s3_bucket if task.s3_bucket else self.cfg["S3_CODE_BUCKET"]
         self.s3.download_file(bucket, task.s3_key, str(zip_path))
         
-        # ✅ [FIX] Zip Slip 방지 코드 적용
+        # Zip Slip 방지 코드 적용
         with zipfile.ZipFile(zip_path, "r") as zf:
             for member in zf.namelist():
                 # 상위 디렉터리(../) 접근 시도 차단
@@ -229,6 +228,15 @@ class TaskExecutor:
                         shutil.copyfileobj(source, dest)
         
         zip_path.unlink()
+
+        # [Feature 2] Inject ai_client.py
+        try:
+            current_dir = Path(__file__).parent
+            src_client = current_dir / "ai_client.py"
+            shutil.copy(str(src_client), str(local_dir / "ai_client.py"))
+        except Exception as e:
+            logger.error("Failed to inject ai_client.py", error=str(e))
+
         return local_dir
 
     def run(self, task: TaskMessage) -> ExecutionResult:
@@ -245,7 +253,7 @@ class TaskExecutor:
             # 2. 컨테이너 획득 (Warm Start)
             container = self._acquire_container(task.runtime)
             
-            # [FIX] 동적 메모리 제한 적용 (실행 직전)
+            # 동적 메모리 제한 적용 (실행 직전)
             try:
                 container.update(mem_limit=f"{task.memory_mb}m", memswap_limit=f"{task.memory_mb}m")
             except Exception as e:
@@ -265,7 +273,8 @@ class TaskExecutor:
             env_vars = {
                 "PAYLOAD": json.dumps(task.payload),
                 "AI_ENDPOINT": self.cfg.get("AI_ENDPOINT", "http://10.0.20.100:11434"),
-                "JOB_ID": task.request_id
+                "JOB_ID": task.request_id,
+                "LLM_MODEL": task.model_id
             }
 
             cmd = []
@@ -316,7 +325,7 @@ class TaskExecutor:
             exit_code = exec_result["exit_code"]
             output = exec_result["output"]
             
-            # ✅ [FIX] 하드코딩 제거 & 실제 메모리 측정
+            # 하드코딩 제거 & 실제 메모리 측정
             try:
                 stats = container.stats(stream=False)
                 # Max usage is more accurate for peak memory during execution
@@ -334,6 +343,22 @@ class TaskExecutor:
             
             # 7. Output Upload
             # 컨테이너 내에서 /output에 쓴 파일들은 host_output_dir에 저장됨
+            
+            # [Feature 3] Usage Metering Collection (Thread-safe JSONL)
+            llm_token_count = 0
+            usage_file = host_output_dir / ".llm_usage_stats.jsonl"
+            if usage_file.exists():
+                try:
+                    with open(usage_file, 'r') as f:
+                        for line in f:
+                            if not line.strip(): continue
+                            stats = json.loads(line)
+                            llm_token_count += stats.get("prompt_eval_count", 0) + stats.get("eval_count", 0)
+                    # Don't upload the hidden stats file
+                    usage_file.unlink() 
+                except Exception as e:
+                    logger.warning("Failed to read LLM usage stats", error=str(e))
+
             output_files = self.uploader.upload_outputs(task.request_id, str(host_output_dir))
 
             output_str = output.decode('utf-8', errors='replace')
@@ -349,7 +374,8 @@ class TaskExecutor:
                 allocated_memory_mb=task.memory_mb,
                 optimization_tip=tip,
                 estimated_savings=savings,
-                output_files=output_files
+                output_files=output_files,
+                llm_token_count=llm_token_count
             )
 
         except Exception as e:
@@ -360,7 +386,7 @@ class TaskExecutor:
             )
             
         finally:
-            # ✅ [FIX] 오염된 컨테이너는 재사용하지 않고 폐기
+            # 오염된 컨테이너는 재사용하지 않고 폐기
             if container:
                 try:
                     # Dirty Container Removal
