@@ -170,7 +170,7 @@ class TaskExecutor:
                 # 여기서는 편의상 전체 작업 루트를 마운트
                 volumes={self.cfg["DOCKER_WORK_DIR_ROOT"]: {"bind": "/workspace", "mode": "rw"}},
                 network_mode="bridge", # AI Endpoint 접근 허용
-                mem_limit=f"{task.memory_mb}m",    # 컨테이너 하드 리밋 (Dynamic)
+                mem_limit="1024m",   # Default (Will be updated in run)
                 cpu_quota=50000      # 0.5 CPU
             )
             c.pause()
@@ -244,6 +244,12 @@ class TaskExecutor:
 
             # 2. 컨테이너 획득 (Warm Start)
             container = self._acquire_container(task.runtime)
+            
+            # [FIX] 동적 메모리 제한 적용 (실행 직전)
+            try:
+                container.update(mem_limit=f"{task.memory_mb}m", memswap_limit=f"{task.memory_mb}m")
+            except Exception as e:
+                logger.warning("Failed to update container memory limit", error=str(e))
             
             # 3. 실행 커맨드 구성
             # Output Directory Setup
