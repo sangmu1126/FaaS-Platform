@@ -66,3 +66,23 @@ class AIClient:
         except Exception as e:
             print(f"AI Generation Error: {e}")
             raise
+
+    def chat(self, messages, model=None, **kwargs):
+        """Chat with the LLM API using messages format."""
+        model = model or self.default_model
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            **kwargs
+        }
+        
+        try:
+            res = self.session.post(f"{self.endpoint}/api/chat", json=payload)
+            res.raise_for_status()
+            data = res.json()
+            self._record_usage(data)
+            return data.get("message", {}).get("content", "")
+        except Exception as e:
+            print(f"AI Chat Error: {e}")
+            raise
