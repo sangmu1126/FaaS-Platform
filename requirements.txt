@@ -1,0 +1,5 @@
+boto3
+redis
+docker
+structlog
+python-dotenv
