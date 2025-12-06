@@ -8,13 +8,11 @@ import redis
 import structlog
 from dotenv import load_dotenv
 
-# Executor 통합 모듈 import
 from executor import TaskExecutor, TaskMessage
 
 # --- Setup ---
 load_dotenv()
 
-# 로깅 설정
 structlog.configure(
     processors=[
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S"),
@@ -28,23 +26,21 @@ class NanoAgent:
     def __init__(self):
         logger.info("🤖 NanoGrid Agent Starting...")
         
-        # 환경 변수 로드 -> Config 딕셔너리 생성
+        # 환경 변수 로드
         self.config = {k: v for k, v in os.environ.items()}
         
-        # AWS & Redis Clients
-        self.sqs = boto3.client('sqs', region_name=self.config["AWS_REGION"])
+        # Clients
+        self.sqs = boto3.client('sqs', region_name=self.config.get("AWS_REGION", "ap-northeast-2"))
         self.redis_client = redis.Redis(
             host=self.config["REDIS_HOST"],
-            port=int(self.config["REDIS_PORT"]),
-            password=self.config.get("REDIS_PASSWORD"),
+            port=int(self.config.get("REDIS_PORT", 6379)),
             decode_responses=True
         )
         
-        # 실행 엔진 초기화
+        # 실행 엔진 (Warm Pool 포함)
         self.executor = TaskExecutor(self.config)
         self.running = True
 
-        # 시그널 핸들링
         signal.signal(signal.SIGINT, self._stop)
         signal.signal(signal.SIGTERM, self._stop)
 
@@ -90,24 +86,27 @@ class NanoAgent:
             
             logger.info("🚀 Processing Task", id=task.request_id, runtime=task.runtime)
 
-            # 2. 작업 실행 (Executor에게 위임)
+            # 2. 작업 실행 (Warm Pool 사용)
             result = self.executor.run(task)
 
-            # 3. 결과 Redis 발행
-            channel = f"{self.config['REDIS_RESULT_PREFIX']}{task.request_id}"
-            self.redis_client.publish(channel, json.dumps(result.to_dict()))
+            # 3. 결과 Redis 발행 (Pub/Sub + KV 저장)
+            result_dict = result.to_dict()
+            json_result = json.dumps(result_dict)
             
-            # 4. SQS 메시지 삭제 (성공 시)
+            # Pub/Sub 채널
+            channel = f"result:{task.request_id}"
+            self.redis_client.publish(channel, json_result)
+            
+            # Async 조회용 키 저장 (TTL 1시간)
+            self.redis_client.setex(f"job:{task.request_id}", 3600, json_result)
+            
+            # 4. SQS 메시지 삭제
             self.sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=msg["ReceiptHandle"])
             
             logger.info("✅ Task Completed", id=task.request_id, ms=result.duration_ms)
 
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON format", body=msg["Body"])
-            self.sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=msg["ReceiptHandle"])
         except Exception as e:
             logger.error("Task processing failed", error=str(e))
-            # 에러 시 SQS 메시지를 지우지 않음 -> VisibilityTimeout 후 재시도 (DLQ 활용 권장)
 
 if __name__ == "__main__":
     agent = NanoAgent()
