@@ -10,6 +10,7 @@ const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
 const Redis = require("ioredis");
 const { v4: uuidv4 } = require('uuid');
 const { EventEmitter } = require('events');
+const client = require('prom-client');
 
 const app = express();
 app.use(cors());
@@ -106,6 +107,29 @@ const rateLimiter = async (req, res, next) => {
     } catch (error) { next(); }
 };
 
+// Prometheus Metrics
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+const httpRequestDurationMicroseconds = new client.Histogram({
+    name: 'http_request_duration_seconds',
+    help: 'Duration of HTTP requests in seconds',
+    labelNames: ['method', 'route', 'status_code'],
+    buckets: [0.1, 0.5, 1, 2, 5]
+});
+register.registerMetric(httpRequestDurationMicroseconds);
+
+// Metrics Middleware
+app.use((req, res, next) => {
+    const end = httpRequestDurationMicroseconds.startTimer();
+    res.on('finish', () => {
+        if (req.route) {
+            end({ method: req.method, route: req.route.path, status_code: res.statusCode });
+        }
+    });
+    next();
+});
+
 // Multer S3
 const upload = multer({
     storage: multerS3({
@@ -124,6 +148,17 @@ app.get('/health', (req, res) => {
     const status = isRedisConnected ? 200 : 503;
     res.status(status).json({ status: isRedisConnected ? 'OK' : 'ERROR', version: VERSION });
 });
+
+// 0.1 Metrics Endpoint
+app.get('/metrics', async (req, res) => {
+    try {
+        res.set('Content-Type', register.contentType);
+        res.end(await register.metrics());
+    } catch (err) {
+        res.status(500).end(err);
+    }
+});
+
 
 // 1. Upload
 app.post('/upload', authenticate, rateLimiter, upload.single('file'), async (req, res) => {
