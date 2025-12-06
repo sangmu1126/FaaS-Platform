@@ -10,6 +10,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict
 from datetime import datetime
+from uploader import OutputUploader
 
 logger = structlog.get_logger()
 
@@ -121,15 +122,20 @@ class TaskExecutor:
         self.docker = docker.from_env()
         self.s3 = boto3.client("s3", region_name=config.get("AWS_REGION", "ap-northeast-2"))
         self.cw = CloudWatchPublisher(config.get("AWS_REGION", "ap-northeast-2"))
+        self.uploader = OutputUploader(
+            bucket_name=config.get("S3_USER_DATA_BUCKET", ""),
+            region=config.get("AWS_REGION", "ap-northeast-2")
+        )
         
         # Warm Pool 저장소
         self.pools = {
-            "python": deque(), "cpp": deque(), "nodejs": deque()
+            "python": deque(), "cpp": deque(), "nodejs": deque(), "go": deque()
         }
         self.images = {
             "python": config.get("DOCKER_PYTHON_IMAGE", "python:3.9-slim"),
             "cpp": config.get("DOCKER_CPP_IMAGE", "gcc:latest"),
-            "nodejs": config.get("DOCKER_NODEJS_IMAGE", "node:18-alpine")
+            "nodejs": config.get("DOCKER_NODEJS_IMAGE", "node:18-alpine"),
+            "go": config.get("DOCKER_GO_IMAGE", "golang:1.19-alpine")
         }
         
         self._initialize_warm_pool()
@@ -139,7 +145,8 @@ class TaskExecutor:
         counts = {
             "python": int(self.cfg.get("WARM_POOL_PYTHON_SIZE", 1)),
             "cpp": int(self.cfg.get("WARM_POOL_CPP_SIZE", 1)),
-            "nodejs": int(self.cfg.get("WARM_POOL_NODEJS_SIZE", 1))
+            "nodejs": int(self.cfg.get("WARM_POOL_NODEJS_SIZE", 1)),
+            "go": int(self.cfg.get("WARM_POOL_GO_SIZE", 1))
         }
         logger.info("🔥 Initializing Warm Pools", counts=counts)
         
@@ -232,14 +239,26 @@ class TaskExecutor:
             container = self._acquire_container(task.runtime)
             
             # 3. 실행 커맨드 구성
+            # Output Directory Setup
+            host_output_dir = host_work_dir / "output"
+            host_output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Symlink /workspace/{req_id}/output -> /output inside container
+            # This allows user code to write to /output transparently
+            # Note: /output exists from Dockerfile, so we must remove it to create the symlink at /output
+            setup_cmd = f"rm -rf /output && ln -s {container_work_dir}/output /output"
+
             cmd = []
             if task.runtime == "python": 
-                cmd = ["python", f"{container_work_dir}/main.py"]
+                cmd = ["sh", "-c", f"{setup_cmd} && python {container_work_dir}/main.py"]
             elif task.runtime == "cpp": 
                 # C++은 컴파일 후 실행
-                cmd = ["sh", "-c", f"g++ {container_work_dir}/main.cpp -o {container_work_dir}/out && {container_work_dir}/out"]
+                cmd = ["sh", "-c", f"{setup_cmd} && g++ {container_work_dir}/main.cpp -o {container_work_dir}/out && {container_work_dir}/out"]
             elif task.runtime == "nodejs": 
-                cmd = ["node", f"{container_work_dir}/index.js"]
+                cmd = ["sh", "-c", f"{setup_cmd} && node {container_work_dir}/index.js"]
+            elif task.runtime == "go":
+                # Go는 빌드 후 실행
+                cmd = ["sh", "-c", f"{setup_cmd} && cd {container_work_dir} && go build -o main main.go && ./main"]
 
             # 4. 실행 (Exec)
             logger.info("Exec command", cmd=cmd, container=container.id[:12])
@@ -263,6 +282,10 @@ class TaskExecutor:
             tip, savings = AutoTuner.analyze(usage, task.memory_mb)
             self.cw.publish_peak_memory(task.function_id, task.runtime, usage)
             
+            # 7. Output Upload
+            # 컨테이너 내에서 /output에 쓴 파일들은 host_output_dir에 저장됨
+            output_files = self.uploader.upload_outputs(task.request_id, str(host_output_dir))
+
             output_str = output.decode('utf-8', errors='replace')
 
             return ExecutionResult(
@@ -275,7 +298,8 @@ class TaskExecutor:
                 peak_memory_bytes=usage,
                 allocated_memory_mb=task.memory_mb,
                 optimization_tip=tip,
-                estimated_savings=savings
+                estimated_savings=savings,
+                output_files=output_files
             )
 
         except Exception as e:
