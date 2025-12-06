@@ -9,10 +9,11 @@ const { DynamoDBClient, PutItemCommand, GetItemCommand, ScanCommand, DeleteItemC
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
 const Redis = require("ioredis");
 const { v4: uuidv4 } = require('uuid');
+const { EventEmitter } = require('events');
 
 const app = express();
 app.use(cors());
-const PORT = 8080; 
+const PORT = 8080;
 const VERSION = "v2.4";
 
 const logger = {
@@ -45,6 +46,35 @@ const redis = new Redis({
 let isRedisConnected = false;
 redis.on('error', (err) => { isRedisConnected = false; logger.error("Global Redis Connection Error", err); });
 redis.on('connect', () => { isRedisConnected = true; logger.info("Global Redis Connected Successfully"); });
+
+// Global Redis Subscriber (Optimization)
+const redisSub = new Redis({
+    host: process.env.REDIS_HOST,
+    port: 6379,
+    retryStrategy: times => Math.min(times * 50, 2000)
+});
+const responseEmitter = new EventEmitter();
+
+redisSub.on('connect', () => {
+    logger.info("Global Redis Subscriber Connected");
+    // Listen for all result channels
+    redisSub.psubscribe('result:*', (err, count) => {
+        if (err) logger.error("Failed to subscribe to result:*", err);
+        else logger.info(`Subscribed to result channels. Count: ${count}`);
+    });
+});
+
+redisSub.on('pmessage', (pattern, channel, message) => {
+    // Channel format: result:{requestId}
+    if (pattern === 'result:*') {
+        const parts = channel.split(':');
+        const requestId = parts[1];
+        if (requestId) {
+            // Dispatch to the specific request promise
+            responseEmitter.emit(requestId, message);
+        }
+    }
+});
 
 app.use(express.json());
 
@@ -80,11 +110,11 @@ const rateLimiter = async (req, res, next) => {
 const upload = multer({
     storage: multerS3({
         s3: s3,
-        bucket: process.env.BUCKET_NAME,
+        bucket: process.env.BUCKET_NAME, // Must match S3_CODE_BUCKET in Worker
         key: function (req, file, cb) {
             const functionId = uuidv4();
-            req.functionId = functionId; 
-            cb(null, `functions/${functionId}/v1.zip`); 
+            req.functionId = functionId;
+            cb(null, `functions/${functionId}/v1.zip`);
         }
     })
 });
@@ -100,7 +130,7 @@ app.post('/upload', authenticate, rateLimiter, upload.single('file'), async (req
     try {
         if (!req.file) return res.status(400).json({ error: "No file provided" });
         const functionId = req.functionId || uuidv4();
-        
+
         await db.send(new PutItemCommand({
             TableName: process.env.TABLE_NAME,
             Item: {
@@ -108,6 +138,7 @@ app.post('/upload', authenticate, rateLimiter, upload.single('file'), async (req
                 s3Key: { S: req.file.key },
                 originalName: { S: req.file.originalname },
                 runtime: { S: req.body.runtime || "python" },
+                memoryMb: { N: (req.body.memoryMb || "128").toString() }, // Auto-Tuner
                 uploadedAt: { S: new Date().toISOString() }
             }
         }));
@@ -122,7 +153,7 @@ app.post('/upload', authenticate, rateLimiter, upload.single('file'), async (req
 // 2. Run
 app.post('/run', authenticate, rateLimiter, async (req, res) => {
     const { functionId, inputData } = req.body || {};
-    const isAsync = req.headers['x-async'] === 'true'; 
+    const isAsync = req.headers['x-async'] === 'true';
     if (!functionId) return res.status(400).json({ error: "functionId is required" });
 
     const requestId = uuidv4();
@@ -137,7 +168,8 @@ app.post('/run', authenticate, rateLimiter, async (req, res) => {
         const taskPayload = {
             requestId,
             functionId,
-            runtime: Item.runtime ? Item.runtime.S : "python", 
+            runtime: Item.runtime ? Item.runtime.S : "python",
+            memoryMb: Item.memoryMb ? parseInt(Item.memoryMb.N) : 128, // Auto-Tuner
             s3Bucket: process.env.BUCKET_NAME,
             s3Key: Item.s3Key ? Item.s3Key.S : "",
             timeoutMs: 300000, // Worker Timeout: 5 min
@@ -147,15 +179,15 @@ app.post('/run', authenticate, rateLimiter, async (req, res) => {
         await sqs.send(new SendMessageCommand({
             QueueUrl: process.env.SQS_URL, MessageBody: JSON.stringify(taskPayload)
         }));
-        
+
         if (isAsync) {
-            return res.status(202).json({ 
-                status: "ACCEPTED", 
-                message: "Job submitted.", 
-                jobId: requestId 
+            return res.status(202).json({
+                status: "ACCEPTED",
+                message: "Job submitted.",
+                jobId: requestId
             });
         }
-        
+
         const result = await waitForResult(requestId);
         res.json(result);
 
@@ -179,32 +211,32 @@ app.get('/status/:jobId', authenticate, async (req, res) => {
 
 function waitForResult(requestId) {
     return new Promise((resolve) => {
-        const sub = new Redis({ host: process.env.REDIS_HOST, port: 6379 });
-        const channel = `result:${requestId}`;
         let completed = false;
 
+        // Listener for the result
+        const onResult = (msg) => {
+            if (completed) return;
+            cleanup();
+            try { resolve(JSON.parse(msg)); } catch (e) { resolve({ raw: msg }); }
+        };
+
         // Controller Wait Timeout: 290s (Worker Timeout 300s보다 약간 짧게)
-        const timeout = setTimeout(() => { 
+        const timeout = setTimeout(() => {
             if (!completed) {
                 cleanup();
                 logger.warn("Sync Wait Timed Out", { requestId });
                 resolve({ status: "TIMEOUT", message: "Processing timed out." });
             }
-        }, 290000); 
+        }, 290000);
 
         function cleanup() {
             completed = true;
             clearTimeout(timeout);
-            try { sub.disconnect(); } catch (e) {}
+            responseEmitter.removeListener(requestId, onResult);
         }
 
-        sub.subscribe(channel);
-        sub.on('message', (chn, msg) => {
-            if (chn === channel) {
-                cleanup();
-                try { resolve(JSON.parse(msg)); } catch (e) { resolve({ raw: msg }); }
-            }
-        });
+        // Register the one-time listener
+        responseEmitter.once(requestId, onResult);
     });
 }
 
@@ -213,7 +245,7 @@ app.get(['/functions', '/api/functions'], cors(), async (req, res) => {
     try {
         const command = new ScanCommand({ TableName: process.env.TABLE_NAME });
         const response = await db.send(command);
-        
+
         const items = response.Items.map(item => ({
             functionId: item.functionId.S,
             name: item.originalName ? item.originalName.S : "Unknown",
@@ -224,7 +256,7 @@ app.get(['/functions', '/api/functions'], cors(), async (req, res) => {
         res.json(items);
     } catch (error) {
         logger.error("List Functions Error", error);
-        res.status(500).json([]); 
+        res.status(500).json([]);
     }
 });
 
