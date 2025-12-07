@@ -1,154 +1,178 @@
 # ⚡ NanoGrid: High-Density FaaS Controller
 
-NanoGrid는 AWS EC2 기반의 초경량 FaaS(Function as a Service) 플랫폼입니다. Lambda의 콜드 스타트 비용 없이, Redis와 SQS를 활용한 비동기 아키텍처로 높은 처리량과 안정성을 보장합니다.
+![Version](https://img.shields.io/badge/version-v2.4-blue.svg) ![Node](https://img.shields.io/badge/node-%3E%3D16-green.svg) ![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)
+
+NanoGrid is a lightweight, high-performance FaaS (Function as a Service) platform controller designed for AWS EC2 environments. It eliminates cold start latency by leveraging a warm-pool architecture and ensures high throughput using Redis-based rate limiting and an asynchronous SQS job queue.
+
+---
 
 ## 🏗 Architecture Overview
 
-NanoGrid는 Event-Driven Architecture를 기반으로 설계되었습니다.
+The NanoGrid Controller acts as the central brain of the platform, orchestrating code uploads, job scheduling, and result retrieval. It integrates with an AI Node for model serving and Worker Nodes for function execution.
 
 ```mermaid
 graph LR
-    User[Client] -- API Key Auth --> ALB[Application Load Balancer]
+    User[Client] -- "x-api-key" --> ALB[Load Balancer]
     ALB -- Port 8080 --> Controller[Node.js Controller]
-
-    subgraph "Core Logic (v2.2)"
-    Controller -- 1. Upload Code --> S3[AWS S3]
-    Controller -- 2. Save Meta --> DDB[DynamoDB]
-    Controller -- 3. Rate Limit & Pub/Sub --> Redis[(Redis Cluster)]
-    Controller -- 4. Enqueue Job --> SQS[AWS SQS]
+    
+    subgraph "Control Plane (NanoGrid)"
+    Controller -- "1. Upload (Zip)" --> S3[AWS S3]
+    Controller -- "2. Metadata" --> DDB[DynamoDB]
+    Controller -- "3. Rate Limit" --> Redis[(Redis Cluster)]
+    Controller -- "4. Enqueue Job" --> SQS[AWS SQS]
+    
+    Controller -.-> Prom[Prometheus]
+    Controller -.-> AINode[AI Node / Ollama]
     end
 
     SQS --> Worker[Worker Nodes]
-    Worker -- 5. Publish Result --> Redis
-    Redis -- 6. Return Response --> Controller
+    Worker -- "5. Result Pub" --> Redis
+    Redis -- "6. Sub/Result" --> Controller
     Controller --> User
 ```
 
+---
+
 ## ✨ Key Features
 
-NanoGrid Controller 는 단순한 MVP를 넘어, 실제 프로덕션 운영이 가능한 수준의 안정성과 보안을 갖추고 있습니다.
+### 🛡️ 1. Advanced Security
+- **API Key Authentication**: Strict `x-api-key` header verification prevents unauthorized access.
+- **Atomic Rate Limiting**: Uses Redis Lua scripts to enforce exact rate limits (100 req/min per IP), effectively mitigating DDoS attacks.
+- **Input Validation**: Rigorous checks on memory limits (128MB - 10GB) and file types.
 
-### 🛡️ 1. Advanced Security (보안)
+### 🏥 2. Operational Stability
+- **Fail-Fast Startup**: Deep validation of all required environment variables at startup; the process exits immediately (`exit 1`) if configuration is invalid for safety.
+- **Graceful Shutdown**: Handles `SIGTERM`/`SIGINT` to close HTTP server and Redis connections safely, ensuring zero downtime deployments.
+- **Smart Health Check**: The `/health` endpoint checks not just the process status but also Redis connectivity, allowing load balancers to isolate unhealthy nodes instantly.
 
-- API Key Authentication: x-api-key 헤더 검증을 통한 비인가 접근 원천 차단.
-- Atomic Rate Limiting: Redis Lua Script를 활용하여 원자성(Atomicity)이 보장된 속도 제한 구현 (DDoS 방어).
-- Safe Input Handling: safeString 유틸리티를 통한 NoSQL Injection 및 데이터 오염 방지.
+### 🔭 3. Observability
+- **Prometheus Metrics**: Built-in `/metrics` endpoint exporting RED (Rate, Errors, Duration) metrics.
+    - `http_request_duration_seconds`: Histogram of response times.
+- **Structured Logging**: All logs are emitted in JSON format for easy ingestion by Datadog, CloudWatch, or ELK Stack.
+- **Traceable Request IDs**: Every request is assigned a UUID (`requestId`) for end-to-end tracing across distributed components.
 
-### 🏥 2. Operational Stability (운영 안정성)
-
-- Fail-Fast Strategy: 서버 시작 시 필수 환경변수(REQUIRED_ENV)를 검증하여, 설정 누락 시 즉시 종료(Exit 1). 좀비 프로세스 방지.
-- Graceful Shutdown: 배포나 스케일인 시 SIGTERM/SIGINT를 감지하여, 진행 중인 연결을 안전하게 처리 후 종료.
-- Smart Health Check: 단순한 서버 가동 여부가 아닌, Redis 연결 상태까지 반영하여 로드 밸런서(ALB)가 장애 노드를 즉시 격리(503 Service Unavailable).
-
-### 🔭 3. Observability (관측 가능성)
-
-- Structured JSON Logging: console.log 대신 JSON 포맷 로깅을 적용하여 CloudWatch/Datadog 등에서 쿼리 및 분석 용이.
-- Traceable Request ID: 모든 요청에 UUID(requestId)를 부여하여 전체 트랜잭션 추적 가능.
+---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js v16+
-- Redis (ElastiCache or Local)
-- AWS Credentials (IAM Role or Key)
+- **Node.js**: v16 or higher
+- **Redis**: v6+ (ElastiCache or self-hosted)
+- **AWS Resources**: S3 Bucket, DynamoDB Table, SQS Queue
 
 ### Installation
 
-```
-# 1. Clone Repository
-git clone https://github.com/your-repo/nanogrid-controller.git
-cd nanogrid-controller
+```bash
+# 1. Clone the repository
+git clone https://github.com/nanogrid/infra-controller.git
+cd infra-controller
 
-# 2. Install Dependencies
+# 2. Install dependencies
 npm install
 ```
 
-### Configuration (.env)
+### Configuration
 
-프로젝트 루트에 .env 파일을 생성하고 아래 변수들을 필수로 설정해야 합니다. (하나라도 없으면 서버가 켜지지 않습니다.)
+Create a `.env` file in the root directory. **All variables are required.**
 
-```
-PORT=8080
-AWS_REGION=ap-northeast-2
-BUCKET_NAME=nanogrid-code-bucket
-TABLE_NAME=NanoGridFunctions
-SQS_URL=https://sqs.ap-northeast-2.amazonaws.com/xxx/nanogrid-queue
-REDIS_HOST=nanogrid-redis.xxxx.cache.amazonaws.com
-NANOGRID_API_KEY=your-secret-api-key-1234
-```
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `PORT` | Service port | `8080` |
+| `AWS_REGION` | AWS Region code | `ap-northeast-2` |
+| `BUCKET_NAME` | S3 Bucket for code storage | `nanogrid-code-bucket` |
+| `TABLE_NAME` | DynamoDB Table name | `NanoGridFunctions` |
+| `SQS_URL` | SQS Queue URL | `https://sqs.../nanogrid-queue` |
+| `REDIS_HOST` | Redis Endpoint | `nanogrid-redis...cache.amazonaws.com` |
+| `NANOGRID_API_KEY` | Secret key for auth | `your-secret-key-1234` |
+| `AI_NODE_URL` | (Optional) AI Model Server | `http://10.0.20.100:11434` |
 
 ### Running the Server
 
-```
-# Production Mode (Recommended)
-pm2 start controller.js --name "controller"
-
-# Development Mode
+```bash
+# Development
 node controller.js
+
+# Production (PM2)
+pm2 start controller.js --name "nanogrid-controller"
 ```
+
+---
 
 ## 📡 API Reference
 
-모든 API 요청 헤더에는 반드시 x-api-key가 포함되어야 합니다.
+All requests must include the header: `x-api-key: <YOUR_KEY>`
 
-### 1. Code Upload
+### Function Management
 
-파이썬 코드를 업로드하고 functionId를 발급받습니다.
+#### 1. Upload Function
+Uploads a Python script or Zip file.
+- **POST** `/upload`
+- **Body**: `multipart/form-data` (`file`)
+- **Params**: `memoryMb` (default: 128), `runtime` (default: python)
 
-```
-URL: POST /upload
-Headers: x-api-key: <YOUR_KEY>
-Body: multipart/form-data (file: .py or .zip)
+#### 2. List Functions
+Retrieves all registered functions.
+- **GET** `/functions`
 
-curl -X POST http://<ALB-DNS>/upload \
-  -H "x-api-key: secret" \
-  -F "file=@main.py"
-```
+#### 3. Update Function
+Updates code or metadata for an existing function.
+- **PUT** `/functions/:id`
 
-### 2. Run Function
+#### 4. Delete Function
+Deletes function metadata and S3 artifacts.
+- **DELETE** `/functions/:id`
 
-발급받은 ID로 함수를 비동기 실행하고 결과를 기다립니다. (Long Polling)
+### Job Execution
 
-```
-URL: POST /run
-Headers: x-api-key: <YOUR_KEY>, Content-Type: application/json
-
+#### 1. Run Function
+Executes a function synchronously or asynchronously.
+- **POST** `/run`
+- **Headers**:
+    - `x-async: true` (Optional, returns immediately with Job ID)
+- **Body**:
+```json
 {
-  "functionId": "uuid-string",
-  "inputData": { "name": "NanoGrid" }
+  "functionId": "uuid...",
+  "inputData": { "key": "value" },
+  "modelId": "llama3:8b"
 }
 ```
 
-### 3. Health Check
+#### 2. Job Status
+Checks the status of an asynchronous job.
+- **GET** `/status/:jobId`
 
-ALB가 사용하는 상태 검사 엔드포인트입니다.
+### System
 
+#### 1. Health Check
+- **GET** `/health`
+- **Response**: `200 OK` or `503 Service Unavailable`
+
+#### 2. Metrics
+- **GET** `/metrics` (Prometheus format)
+
+#### 3. AI Models
+- **GET** `/models` (Lists available AI models from AI Node)
+
+---
+
+## 💻 Terminal Output Demo
+
+**Server Startup:**
+```json
+{"level":"INFO","timestamp":"2023-10-27T10:00:01.123Z","msg":"Global Redis Connected Successfully"}
+{"level":"INFO","timestamp":"2023-10-27T10:00:01.125Z","msg":"Global Redis Subscriber Connected"}
+{"level":"INFO","timestamp":"2023-10-27T10:00:01.130Z","msg":"Subscribed to result channels. Count: 1"}
+{"level":"INFO","timestamp":"2023-10-27T10:00:01.135Z","msg":"NanoGrid Controller v2.4 Started","port":8080}
 ```
-URL: GET /health
 
-200 OK: Redis 연결 정상.
-503 Service Unavailable: Redis 연결 끊김 (트래픽 차단).
+**Function Execution:**
+```json
+{"level":"INFO","timestamp":"2023-10-27T10:05:22.450Z","msg":"Run Request","requestId":"a1b2c3d4...","functionId":"func-123","mode":"SYNC"}
 ```
 
-## 🛠 Project Structure
-
-```
-nanogrid-controller/
-├── controller.js      # Main Entry Point (v2.2 Logic)
-├── client.py          # Auto-deployment Client Script
-├── package.json       # Dependencies
-└── .env               # Environment Variables (Not committed)
-```
-
-## 👨‍💻 Client Automation (client.py)
-
-번거로운 curl 명령어를 대체하는 Python 클라이언트가 포함되어 있습니다.
-
-```
-# 코드 수정 후 자동 배포 및 실행
-python client.py main.py
-
-# 기존 배포된 함수 재실행 (업로드 생략)
-python client.py
+**Error Handling:**
+```json
+{"level":"ERROR","timestamp":"2023-10-27T10:06:00.000Z","msg":"Upload Error","error":"Invalid memoryMb. Must be between 128 and 10240."}
 ```
