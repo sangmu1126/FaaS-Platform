@@ -12,26 +12,26 @@ AI Node는 NanoGrid의 **Controller**와 **Worker** 사이에서 LLM 요청을 �
 
 ```mermaid
 graph TD
-    Client[Client / User] -->|1. Job Request (Model: phi3)| Controller
-    Controller -->|2. Enqueue Job| SQS[(AWS SQS)]
+    Client["Client / User"] -->|"1. Job Request (Model: phi3)"| Controller
+    Controller -->|"2. Enqueue Job"| SQS[(AWS SQS)]
     
     subgraph "NanoGrid Worker Node"
-        Agent[NanoAgent] -->|3. Poll Job| SQS
-        Agent -->|4. Spawn Container| Executor
+        Agent[NanoAgent] -->|"3. Poll Job"| SQS
+        Agent -->|"4. Spawn Container"| Executor
         
         subgraph "Job Container"
-            SDK[ai_client.py] -->|5. LLM Call| AI_Node
+            SDK[ai_client.py] -->|"5. LLM Call"| AI_Node
             UserCode[User Script] -.-> SDK
         end
         
-        Executor -->|7. Collect Metrics| Result
+        Executor -->|"7. Collect Metrics"| Result
     end
     
     subgraph "AI Node (Infrastructure)"
-        AI_Node[Ollama Server] -->|6. Inference Token Stream| SDK
+        AI_Node[Ollama Server] -->|"6. Inference Token Stream"| SDK
     end
 
-    Result -->|8. Final Result| Redis[(Redis)]
+    Result -->|"8. Final Result"| Redis[(Redis)]
 ```
 
 ---
