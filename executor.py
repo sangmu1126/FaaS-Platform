@@ -1,6 +1,7 @@
 import os
 import shutil
 import time
+import threading
 import zipfile
 import json
 import structlog
@@ -200,6 +201,18 @@ class TaskExecutor:
             # 실패 시(이미 죽은 컨테이너 등) 재귀적으로 다시 시도
             return self._acquire_container(target_runtime)
 
+    def _replenish_pool(self, runtime: str):
+        """[Fix 1] Replenish the warm pool asynchronously after usage"""
+        def _create():
+            try:
+                self._create_warm_container(runtime)
+                logger.info("Pool replenished", runtime=runtime)
+            except Exception as e:
+                logger.error("Failed to replenish pool", error=str(e))
+        
+        # Run in a separate thread to avoid blocking the main execution flow
+        threading.Thread(target=_create, daemon=True).start()
+
     def _prepare_workspace(self, task: TaskMessage) -> Path:
         """S3 다운로드 및 [보안] Zip Slip 방지 압축 해제"""
         local_dir = Path(self.cfg["DOCKER_WORK_DIR_ROOT"]) / task.request_id
@@ -253,6 +266,9 @@ class TaskExecutor:
             # 2. 컨테이너 획득 (Warm Start)
             container = self._acquire_container(task.runtime)
             
+            # [Fix 1] Trigger pool replenishment immediately
+            self._replenish_pool(task.runtime)
+            
             # 동적 메모리 제한 적용 (실행 직전)
             try:
                 container.update(mem_limit=f"{task.memory_mb}m", memswap_limit=f"{task.memory_mb}m")
@@ -274,7 +290,8 @@ class TaskExecutor:
                 "PAYLOAD": json.dumps(task.payload),
                 "AI_ENDPOINT": self.cfg.get("AI_ENDPOINT", "http://10.0.20.100:11434"),
                 "JOB_ID": task.request_id,
-                "LLM_MODEL": task.model_id
+                "LLM_MODEL": task.model_id,
+                "OUTPUT_DIR": "/output" # [Fix 3] Explicit output directory env var
             }
 
             cmd = []
@@ -308,10 +325,34 @@ class TaskExecutor:
 
             import threading
             exec_thread = threading.Thread(target=run_docker_exec)
+            
+            # [Fix 2] Memory Monitoring
+            metrics = {"peak_memory": 0}
+            stop_monitoring = threading.Event()
+
+            def monitor_memory():
+                while not stop_monitoring.is_set():
+                    try:
+                        stats = container.stats(stream=False)
+                        usage = stats['memory_stats'].get('usage', 0)
+                        # Optional: Subtract cache if needed
+                        # usage -= stats['memory_stats'].get('stats', {}).get('cache', 0)
+                        metrics["peak_memory"] = max(metrics["peak_memory"], usage)
+                    except:
+                        pass
+                    time.sleep(0.1) # Poll every 100ms
+
+            monitor_thread = threading.Thread(target=monitor_memory, daemon=True)
+            monitor_thread.start()
+            
             exec_thread.start()
             
             # Divide by 1000 for seconds
             exec_thread.join(timeout=task.timeout_ms / 1000.0)
+            
+            # Stop monitoring
+            stop_monitoring.set()
+            monitor_thread.join(timeout=1.0)
             
             if exec_thread.is_alive():
                 logger.error("Execution Timed Out", timeout_ms=task.timeout_ms)
@@ -326,16 +367,19 @@ class TaskExecutor:
             output = exec_result["output"]
             
             # 하드코딩 제거 & 실제 메모리 측정
-            try:
-                stats = container.stats(stream=False)
-                # Max usage is more accurate for peak memory during execution
-                usage = stats['memory_stats'].get('max_usage', 0)
-                # Fallback to usage if max_usage is 0 or missing (rare in normal docker)
-                if usage == 0:
-                    usage = stats['memory_stats'].get('usage', 0)
-            except Exception as e:
-                logger.warning("Failed to get metrics", error=str(e))
-                usage = 0
+            # Use monitored peak memory if available
+            usage = metrics["peak_memory"]
+            
+            # Fallback if monitoring failed or zero (unlikely but safe)
+            if usage == 0:
+                try:
+                    stats = container.stats(stream=False)
+                    usage = stats['memory_stats'].get('max_usage', 0)
+                    if usage == 0:
+                        usage = stats['memory_stats'].get('usage', 0)
+                except Exception as e:
+                    logger.warning("Failed to get fallback metrics", error=str(e))
+                    usage = 0
             
             # 6. Auto-Tuning & CloudWatch
             tip, savings = AutoTuner.analyze(usage, task.memory_mb)
