@@ -1,21 +1,21 @@
-# ⚡ NanoGrid: High-Density FaaS Controller
+# ⚡ Infra: High-Density FaaS Controller
 
 ![Version](https://img.shields.io/badge/version-v2.4-blue.svg) ![Node](https://img.shields.io/badge/node-%3E%3D16-green.svg) ![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)
 
-NanoGrid is a lightweight, high-performance FaaS (Function as a Service) platform controller designed for AWS EC2 environments. It eliminates cold start latency by leveraging a warm-pool architecture and ensures high throughput using Redis-based rate limiting and an asynchronous SQS job queue.
+Infra Controller is a lightweight, high-performance FaaS (Function as a Service) platform controller designed for AWS EC2 environments. It eliminates cold start latency by leveraging a warm-pool architecture and ensures high throughput using Redis-based rate limiting and an asynchronous SQS job queue.
 
 ---
 
 ## 🏗 Architecture Overview
 
-The NanoGrid Controller acts as the central brain of the platform, orchestrating code uploads, job scheduling, and result retrieval. It integrates with an AI Node for model serving and Worker Nodes for function execution.
+The Infra Controller acts as the central brain of the platform, orchestrating code uploads, job scheduling, and result retrieval. It integrates with an AI Node for model serving and Worker Nodes for function execution.
 
 ```mermaid
 graph LR
     User[Client] -- "x-api-key" --> ALB[Load Balancer]
     ALB -- Port 8080 --> Controller[Node.js Controller]
     
-    subgraph "Control Plane (NanoGrid)"
+    subgraph "Control Plane (Infra)"
     Controller -- "1. Upload (Zip)" --> S3[AWS S3]
     Controller -- "2. Metadata" --> DDB[DynamoDB]
     Controller -- "3. Rate Limit" --> Redis[(Redis Cluster)]
@@ -65,7 +65,7 @@ graph LR
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/nanogrid/infra-controller.git
+git clone https://github.com/sangmu1126/Infra-controller.git
 cd infra-controller
 
 # 2. Install dependencies
@@ -80,11 +80,11 @@ Create a `.env` file in the root directory. **All variables are required.**
 | :--- | :--- | :--- |
 | `PORT` | Service port | `8080` |
 | `AWS_REGION` | AWS Region code | `ap-northeast-2` |
-| `BUCKET_NAME` | S3 Bucket for code storage | `nanogrid-code-bucket` |
-| `TABLE_NAME` | DynamoDB Table name | `NanoGridFunctions` |
-| `SQS_URL` | SQS Queue URL | `https://sqs.../nanogrid-queue` |
-| `REDIS_HOST` | Redis Endpoint | `nanogrid-redis...cache.amazonaws.com` |
-| `NANOGRID_API_KEY` | Secret key for auth | `your-secret-key-1234` |
+| `BUCKET_NAME` | S3 Bucket for code storage | `infra-code-bucket` |
+| `TABLE_NAME` | DynamoDB Table name | `InfraFunctions` |
+| `SQS_URL` | SQS Queue URL | `https://sqs.../infra-queue` |
+| `REDIS_HOST` | Redis Endpoint | `infra-redis...cache.amazonaws.com` |
+| `INFRA_API_KEY` | Secret key for auth | `your-secret-key-1234` |
 | `AI_NODE_URL` | (Optional) AI Model Server | `http://10.0.20.100:11434` |
 
 ### Running the Server
@@ -94,7 +94,7 @@ Create a `.env` file in the root directory. **All variables are required.**
 node controller.js
 
 # Production (PM2)
-pm2 start controller.js --name "nanogrid-controller"
+pm2 start controller.js --name "infra-controller"
 ```
 
 ---
@@ -164,7 +164,7 @@ Checks the status of an asynchronous job.
 {"level":"INFO","timestamp":"2023-10-27T10:00:01.123Z","msg":"Global Redis Connected Successfully"}
 {"level":"INFO","timestamp":"2023-10-27T10:00:01.125Z","msg":"Global Redis Subscriber Connected"}
 {"level":"INFO","timestamp":"2023-10-27T10:00:01.130Z","msg":"Subscribed to result channels. Count: 1"}
-{"level":"INFO","timestamp":"2023-10-27T10:00:01.135Z","msg":"NanoGrid Controller v2.4 Started","port":8080}
+{"level":"INFO","timestamp":"2023-10-27T10:00:01.135Z","msg":"Infra Controller v2.4 Started","port":8080}
 ```
 
 **Function Execution:**
