@@ -1,4 +1,4 @@
-# Infra-worker (NanoAgent)
+# Infra-worker (WorkerAgent)
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 ![Redis](https://img.shields.io/badge/Redis-Pub%2FSub-DC382D?style=for-the-badge&logo=redis)
 ![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C?style=for-the-badge&logo=prometheus)
 
-**High-Performance Serverless Task Executor for NanoGrid**
+**High-Performance Serverless Task Executor for Infra**
 
 </div>
 
@@ -16,7 +16,7 @@
 
 ## 📖 Introduction
 
-`Infra-worker`(NanoAgent)는 서버리스 아키텍처의 핵심 실행 단위로, **AWS SQS**로부터 작업을 수신하고 **Docker** 컨테이너 내에서 안전하고 격리된 환경으로 코드를 실행하는 고성능 워커입니다.
+`Infra-worker`(WorkerAgent)는 서버리스 아키텍처의 핵심 실행 단위로, **AWS SQS**로부터 작업을 수신하고 **Docker** 컨테이너 내에서 안전하고 격리된 환경으로 코드를 실행하는 고성능 워커입니다.
 
 이 프로젝트는 단순한 작업 실행을 넘어, **Cold Start 방지**, **메모리 최적화(AutoTuner)**, **보안(Zip Slip 방지)**, **실시간 모니터링(Prometheus)** 등 엔터프라이즈급 기능을 제공합니다.
 
@@ -27,7 +27,7 @@
 ```mermaid
 flowchart TD
     subgraph "AWS Cloud"
-        SQS[AWS SQS Queue] -->|"1. Long Polling"| Agent["NanoAgent (Worker)"]
+        SQS[AWS SQS Queue] -->|"1. Long Polling"| Agent["WorkerAgent (Worker)"]
         S3_Code["S3 Bucket (Code)"] -->|"2. Download Code"| Agent
     end
 
@@ -88,7 +88,7 @@ flowchart TD
 
 ```bash
 # 1. Clone Repository
-git clone https://github.com/Softbank-Final/Infra-worker.git
+git clone https://github.com/sangmu1126/Infra-worker.git
 cd Infra-worker
 
 # 2. Install Dependencies
@@ -140,7 +140,7 @@ Infra-worker/
 ├── uploader.py              # OutputUploader: S3 File Uploads
 ├── ai_client.py             # Injectable Client for User Code
 ├── requirements.txt         # Python Dependencies
-├── nanogrid-worker.service  # Systemd Service File
+├── infra-worker.service  # Systemd Service File
 └── docker/                  # Dockerfiles for Runtimes
     ├── python/
     ├── nodejs/
