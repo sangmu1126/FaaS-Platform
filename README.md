@@ -1,22 +1,22 @@
-# 🧠 NanoGrid AI Node
+# 🧠 Infra AI Node
 
 > **Worker Agent가 코드를 실행하는 동안 대규모 언어 모델(LLM)을 원활하게 활용할 수 있도록 지원하는 전용 백엔드 인프라입니다.**
 
-NanoGrid AI Node는 단순한 LLM 추론 서버를 넘어, **동적 모델 선택(Dynamic Model Selection)**, **개발자 친화적 SDK**, 그리고 **정밀한 비용 미터링(Metering)** 기능을 갖춘 지능형 컴퓨팅 노드입니다.
+Infra AI Node는 단순한 LLM 추론 서버를 넘어, **동적 모델 선택(Dynamic Model Selection)**, **개발자 친화적 SDK**, 그리고 **정밀한 비용 미터링(Metering)** 기능을 갖춘 지능형 컴퓨팅 노드입니다.
 
 ---
 
 ## 🏗️ 아키텍처 (Architecture)
 
-AI Node는 NanoGrid의 **Controller**와 **Worker** 사이에서 LLM 요청을 효율적으로 중개하고 처리합니다.
+AI Node는 **Controller**와 **Worker** 사이에서 LLM 요청을 효율적으로 중개하고 처리합니다.
 
 ```mermaid
 graph TD
     Client["Client / User"] -->|"1. Job Request (Model: phi3)"| Controller
     Controller -->|"2. Enqueue Job"| SQS[(AWS SQS)]
     
-    subgraph "NanoGrid Worker Node"
-        Agent[NanoAgent] -->|"3. Poll Job"| SQS
+    subgraph "Worker Node"
+        Agent[WorkerAgent] -->|"3. Poll Job"| SQS
         Agent -->|"4. Spawn Container"| Executor
         
         subgraph "Job Container"
@@ -173,5 +173,5 @@ if __name__ == "__main__":
 
 ---
 
-> **NanoGrid Team**  
+> **Infra Team**  
 > _Infra-AInode v2.0_
