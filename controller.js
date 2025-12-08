@@ -55,6 +55,7 @@ const redisSub = new Redis({
     retryStrategy: times => Math.min(times * 50, 2000)
 });
 const responseEmitter = new EventEmitter();
+responseEmitter.setMaxListeners(0); // [Fix] 0 means unlimited listeners (prevent memory leak warning)
 
 redisSub.on('connect', () => {
     logger.info("Global Redis Subscriber Connected");
@@ -252,9 +253,19 @@ app.post('/run', authenticate, rateLimiter, async (req, res) => {
             modelId: modelId || "llama3:8b" // Dynamic Model Selection
         };
 
-        await sqs.send(new SendMessageCommand({
-            QueueUrl: process.env.SQS_URL, MessageBody: JSON.stringify(taskPayload)
-        }));
+        const sendMessageParams = {
+            QueueUrl: process.env.SQS_URL,
+            MessageBody: JSON.stringify(taskPayload)
+        };
+
+        // [Fix] Add GroupId for FIFO queues (Ignored for Standard queues)
+        if (process.env.SQS_URL.endsWith('.fifo')) {
+            sendMessageParams.MessageGroupId = "default";
+            // Use requestId for deduplication
+            sendMessageParams.MessageDeduplicationId = requestId;
+        }
+
+        await sqs.send(new SendMessageCommand(sendMessageParams));
 
         if (isAsync) {
             return res.status(202).json({
@@ -317,7 +328,8 @@ function waitForResult(requestId) {
 }
 
 // 1. 함수 목록 조회 (GET /functions)
-app.get(['/functions', '/api/functions'], cors(), async (req, res) => {
+// 1. 함수 목록 조회 (GET /functions)
+app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res) => {
     try {
         const command = new ScanCommand({ TableName: process.env.TABLE_NAME });
         const response = await db.send(command);
@@ -338,7 +350,7 @@ app.get(['/functions', '/api/functions'], cors(), async (req, res) => {
 
 // 2. 로그 조회 (GET /logs)
 // (일단 에러 안 나게 빈 데이터라도 줌)
-app.get(['/logs', '/api/logs'], cors(), (req, res) => {
+app.get(['/logs', '/api/logs'], cors(), authenticate, (req, res) => {
     res.json([
         { id: "1", timestamp: new Date().toISOString(), message: "NanoGrid Controller is running." },
         { id: "2", timestamp: new Date().toISOString(), message: "Waiting for jobs..." }
@@ -346,7 +358,7 @@ app.get(['/logs', '/api/logs'], cors(), (req, res) => {
 });
 
 // 1. 함수 상세 조회 (GET /functions/:id) - 설정 페이지용
-app.get(['/functions/:id', '/api/functions/:id'], cors(), async (req, res) => {
+app.get(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (req, res) => {
     const functionId = req.params.id;
     try {
         const command = new GetItemCommand({
@@ -388,6 +400,19 @@ app.put(['/functions/:id', '/api/functions/:id'], authenticate, upload.single('f
         };
 
         if (req.file) {
+            // [Fix] Clean up old S3 file before update to save cost
+            try {
+                const { Item: oldItem } = await db.send(new GetItemCommand({
+                    TableName: process.env.TABLE_NAME, Key: { functionId: { S: functionId } }
+                }));
+                if (oldItem && oldItem.s3Key) {
+                    s3.send(new DeleteObjectCommand({
+                        Bucket: process.env.BUCKET_NAME,
+                        Key: oldItem.s3Key.S
+                    })).catch(err => logger.warn("Failed to delete old S3 file", err));
+                }
+            } catch (ignore) { }
+
             // 새 파일이 있으면 S3 Key도 업데이트
             updateExpression += ", s3Key = :k, originalName = :n";
             expressionAttributeValues[":k"] = { S: req.file.key };
@@ -417,7 +442,7 @@ app.put(['/functions/:id', '/api/functions/:id'], authenticate, upload.single('f
 });
 
 // 3. 함수 삭제 (DELETE /functions/:id) - S3 파일까지 진짜 삭제
-app.delete(['/functions/:id', '/api/functions/:id'], cors(), async (req, res) => {
+app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (req, res) => {
     const functionId = req.params.id;
     try {
         // 1. 먼저 DB에서 S3 Key를 알아내야 함
