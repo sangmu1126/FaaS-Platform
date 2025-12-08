@@ -229,6 +229,13 @@ app.post('/upload', authenticate, rateLimiter, upload.single('file'), async (req
         logger.info(`Upload Success`, { functionId });
         res.json({ success: true, functionId });
     } catch (error) {
+        // Transaction Safety: Clean up S3 if DB write fails
+        if (req.file) {
+            s3.send(new DeleteObjectCommand({
+                Bucket: process.env.BUCKET_NAME,
+                Key: req.file.key
+            })).catch(err => logger.warn("Failed to cleanup orphaned S3 file", err));
+        }
         logger.error("Upload Error", error);
         res.status(500).json({ error: error.message });
     }
