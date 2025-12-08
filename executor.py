@@ -301,12 +301,23 @@ class TaskExecutor:
 
             # Environment Variables
             env_vars = {
-                "PAYLOAD": json.dumps(task.payload),
-                "AI_ENDPOINT": self.cfg.get("AI_ENDPOINT", "http://10.0.20.100:11434"),
                 "JOB_ID": task.request_id,
                 "LLM_MODEL": task.model_id,
                 "OUTPUT_DIR": "/output" # Explicit output directory env var
             }
+            
+            # Write payload to file if too large (>100KB)
+            payload_str = json.dumps(task.payload)
+            if len(payload_str) > 100 * 1024:
+                payload_path = host_work_dir / "payload.json"
+                with open(payload_path, "w") as f:
+                    f.write(payload_str)
+                env_vars["PAYLOAD_FILE"] = f"{container_work_dir}/payload.json"
+                # Remove PAYLOAD env var to avoid Argument list too long
+                if "PAYLOAD" in env_vars: del env_vars["PAYLOAD"]
+                logger.info("Payload too large, using file instead", size=len(payload_str))
+            else:
+                env_vars["PAYLOAD"] = payload_str
 
             cmd = []
             if task.runtime == "python": 
