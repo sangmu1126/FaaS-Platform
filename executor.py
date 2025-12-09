@@ -7,6 +7,7 @@ import json
 import structlog
 import boto3
 import docker
+import socket
 from pathlib import Path
 from collections import deque
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ class ExecutionResult:
     stdout: str
     stderr: str
     duration_ms: int
+    worker_id: str = "unknown"
     peak_memory_bytes: Optional[int] = None
     allocated_memory_mb: Optional[int] = None
     optimization_tip: Optional[str] = None
@@ -47,6 +49,7 @@ class ExecutionResult:
     def to_dict(self):
         return {
             "requestId": self.request_id,
+            "workerId": self.worker_id,
             "status": "SUCCESS" if self.success else "FAILED",
             "exitCode": self.exit_code,
             "stdout": self.stdout,
@@ -108,7 +111,7 @@ class CloudWatchPublisher:
             # Better if async (logging only here)
             # logger.debug("Publishing CloudWatch Metric", value=bytes_used)
             self.client.put_metric_data(
-                Namespace="NanoGrid/FunctionRunner",
+                Namespace="FaaS/FunctionRunner",
                 MetricData=[{
                     "MetricName": "PeakMemoryBytes",
                     "Dimensions": [{"Name": "FunctionId", "Value": func_id}, {"Name": "Runtime", "Value": runtime}],
@@ -138,7 +141,7 @@ class TaskExecutor:
             "python": deque(), "cpp": deque(), "nodejs": deque(), "go": deque()
         }
         self.images = {
-            "python": config.get("DOCKER_PYTHON_IMAGE", "nanogrid/python:3.9-fat"),
+            "python": config.get("DOCKER_PYTHON_IMAGE", "faas/python:3.9-fat"),
             "cpp": config.get("DOCKER_CPP_IMAGE", "gcc:latest"),
             "nodejs": config.get("DOCKER_NODEJS_IMAGE", "node:18-alpine"),
             "go": config.get("DOCKER_GO_IMAGE", "golang:1.19-alpine")
@@ -256,13 +259,16 @@ class TaskExecutor:
         
         zip_path.unlink()
 
-        # Inject ai_client.py
+        # Inject FaaS SDK
         try:
             current_dir = Path(__file__).parent
-            src_client = current_dir / "ai_client.py"
-            shutil.copy(str(src_client), str(local_dir / "ai_client.py"))
+            src_sdk = current_dir / "sdk.py"
+            if src_sdk.exists():
+                shutil.copy(str(src_sdk), str(local_dir / "sdk.py"))
+            else:
+                logger.warning("sdk.py not found, skipping SDK injection")
         except Exception as e:
-            logger.error("Failed to inject ai_client.py", error=str(e))
+            logger.error("Failed to inject SDK", error=str(e))
 
         return local_dir
 
@@ -302,6 +308,8 @@ class TaskExecutor:
             # Environment Variables
             env_vars = {
                 "JOB_ID": task.request_id,
+                "FUNCTION_ID": task.function_id,
+                "MEMORY_MB": str(task.memory_mb),
                 "LLM_MODEL": task.model_id,
                 "OUTPUT_DIR": "/output" # Explicit output directory env var
             }
@@ -380,8 +388,13 @@ class TaskExecutor:
             
             if exec_thread.is_alive():
                 logger.error("Execution Timed Out", timeout_ms=task.timeout_ms)
-                # Force kill container (Removed in finally block)
-                container.kill()
+                # Graceful Shutdown: SIGTERM -> wait 3s -> SIGKILL
+                try:
+                    container.stop(timeout=3)
+                except Exception as e:
+                    logger.warning("Failed to stop container gracefully, forcing kill", error=str(e))
+                    container.kill()
+                    
                 raise TimeoutError(f"Execution timed out after {task.timeout_ms}ms")
             
             if "error" in exec_result:
@@ -443,14 +456,16 @@ class TaskExecutor:
                 optimization_tip=tip,
                 estimated_savings=savings,
                 output_files=output_files,
-                llm_token_count=llm_token_count
+                llm_token_count=llm_token_count,
+                worker_id=socket.gethostname()
             )
 
         except Exception as e:
             logger.error("Execution failed", error=str(e))
             return ExecutionResult(
                 request_id=task.request_id, success=False, exit_code=-1,
-                stdout="", stderr=str(e), duration_ms=int((time.time() - start_time) * 1000)
+                stdout="", stderr=str(e), duration_ms=int((time.time() - start_time) * 1000),
+                worker_id=socket.gethostname()
             )
             
         finally:
