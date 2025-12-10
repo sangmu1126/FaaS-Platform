@@ -23,19 +23,24 @@ class OutputUploader:
             return uploaded_urls
 
         try:
-            for filename in os.listdir(source_dir):
-                filepath = os.path.join(source_dir, filename)
-                
-                # 디렉토리는 무시 (재귀적 업로드 필요 시 확장 가능)
-                if os.path.isfile(filepath):
-                    s3_key = f'outputs/{job_id}/{filename}'
+            # Recursive Upload using os.walk (User UX Enhancement)
+            for root, dirs, files in os.walk(source_dir):
+                for filename in files:
+                    filepath = os.path.join(root, filename)
+                    
+                    # Calculate relative path (e.g. "images/v1/result.png")
+                    relative_path = os.path.relpath(filepath, source_dir)
+                    
+                    # Ensure S3 keys always use forward slashes (Windows protection)
+                    safe_relative_path = relative_path.replace(os.path.sep, '/')
+                    
+                    s3_key = f'outputs/{job_id}/{safe_relative_path}'
                     
                     if self.bucket:
-                        logger.info("Uploading output file", job_id=job_id, file=filename)
+                        # logger.debug("Uploading output file", file=safe_relative_path)
                         self.s3.upload_file(filepath, self.bucket, s3_key)
                         
-                        # URL 생성 (Public Read 가정 또는 Presigned URL 필요 시 변경)
-                        # 여기서는 표준 Public URL 형식 사용
+                        # Public URL Generation
                         url = f'https://{self.bucket}.s3.{self.region}.amazonaws.com/{s3_key}'
                         uploaded_urls.append(url)
                     else:
