@@ -88,15 +88,14 @@ class AutoTuner:
             tip = f"⚠️ Warning: Memory tight ({int(peak_mb)}MB). Recommend increasing to {rec}MB+."
 
         # 2. Calculate Cost Savings (Business Perspective)
-        # Assumption: Savings compared to 1024MB VM overhead
-        vm_overhead_mb = 1024
-        saved_mb = vm_overhead_mb - peak_mb
+        # Logic: Calculate wasted resources (Allocated - Peak) to highlight inefficiency
+        wasted_mb = allocated_mb - peak_mb
         estimated_savings = None
         
-        if saved_mb > 0:
+        if wasted_mb > 0:
             # Monthly savings (based on 730 hours)
-            monthly_saving = saved_mb * AutoTuner.COST_PER_MB_HOUR * 730
-            estimated_savings = f"${monthly_saving:.2f}/month (vs 1GB VM)"
+            monthly_saving = wasted_mb * AutoTuner.COST_PER_MB_HOUR * 730
+            estimated_savings = f"${monthly_saving:.2f}/month (if rightsized from {allocated_mb}MB)"
 
         return tip, estimated_savings
 
