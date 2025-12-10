@@ -258,16 +258,26 @@ class TaskExecutor:
         
         zip_path.unlink()
 
-        # Inject FaaS SDK
+        # Inject FaaS SDK & AI Client
         try:
             current_dir = Path(__file__).parent
+            
+            # Inject sdk.py
             src_sdk = current_dir / "sdk.py"
             if src_sdk.exists():
                 shutil.copy(str(src_sdk), str(local_dir / "sdk.py"))
             else:
                 logger.warning("sdk.py not found, skipping SDK injection")
+
+            # Inject ai_client.py (Critical for AI Logic)
+            src_ai = current_dir / "ai_client.py"
+            if src_ai.exists():
+                shutil.copy(str(src_ai), str(local_dir / "ai_client.py"))
+            else:
+                logger.warning("ai_client.py not found, skipping injection")
+
         except Exception as e:
-            logger.error("Failed to inject SDK", error=str(e))
+            logger.error("Failed to inject dependencies", error=str(e))
 
         return local_dir
 
