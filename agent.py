@@ -55,7 +55,7 @@ class InfraAgent:
         self.running = False
 
     def run(self):
-        queue_url = self.config["SQS_QUEUE_URL"]
+        queue_url = self.config["SQS_URL"]
         logger.info("📡 Listening for tasks", queue=queue_url)
 
         # Start Metrics Server
