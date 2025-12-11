@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import threading
 import signal
 import sys
 import boto3
@@ -70,7 +71,7 @@ class InfraAgent:
                 # 1. SQS Long Polling
                 resp = self.sqs.receive_message(
                     QueueUrl=queue_url,
-                    MaxNumberOfMessages=1,
+                    MaxNumberOfMessages=10, # Batch fetching (Parallelism key)
                     WaitTimeSeconds=20
                 )
 
@@ -78,7 +79,8 @@ class InfraAgent:
                     continue
 
                 for msg in resp["Messages"]:
-                    self._process_message(queue_url, msg)
+                    # Dispatch to thread for parallel processing
+                    threading.Thread(target=self._process_message, args=(queue_url, msg)).start()
 
             except Exception as e:
                 logger.error("Polling loop error", error=str(e))
