@@ -9,3 +9,7 @@ output "worker_public_ip" {
 output "ssh_connection_string_controller" {
   value = "ssh -i faas-key.pem ec2-user@${aws_instance.controller.public_ip}"
 }
+
+output "redis_endpoint" {
+  value = aws_elasticache_cluster.redis.cache_nodes[0].address
+}
