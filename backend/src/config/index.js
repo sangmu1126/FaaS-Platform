@@ -1,0 +1,18 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+export const config = {
+    port: process.env.PORT || 8080,
+    awsAlbUrl: process.env.AWS_ALB_URL || 'http://localhost:8080', // Default to local if not set, but user provided ALB
+    slack: {
+        token: process.env.SLACK_BOT_TOKEN,
+        channelId: process.env.SLACK_CHANNEL_ID,
+    },
+
+    // Runtime Config
+    runtimes: {
+        python: { contentType: 'text/x-python', ext: '.py' },
+        cpp: { contentType: 'text/x-c', ext: '.cpp' },
+        node: { contentType: 'application/javascript', ext: '.js' }
+    }
+};
