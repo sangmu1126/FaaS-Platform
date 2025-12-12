@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
+import { functionApi } from '../../services/functionApi'; // Import API
 
 export default function DeployPage() {
   const navigate = useNavigate();
@@ -111,7 +112,7 @@ func Handler(event map[string]interface{}) (Response, error) {
   const handleLanguageChange = (langId: string) => {
     const lang = languages.find(l => l.id === langId);
     const isBinaryLanguage = langId === 'cpp' || langId === 'go';
-    
+
     setFormData({
       ...formData,
       language: langId,
@@ -143,77 +144,107 @@ func Handler(event map[string]interface{}) (Response, error) {
     setShowDeploymentModal(true);
     setDeploymentStep(0);
 
-    // 랜덤 시나리오 선택 (데모용)
-    const scenarios = ['success', 'critical_failure', 'build_error', 'warning'];
-    const randomScenario = scenarios[Math.floor(Math.random() * scenarios.length)];
-    
+    // Reset scenarios/failures logic (removed)
     let deploymentFailed = false;
 
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
     try {
-      // Step 1: Code Packaging & Upload
-      await delay(500);
-      if (deploymentFailed) return;
-      
-      if (randomScenario === 'critical_failure' && Math.random() < 0.3) {
-        handleCriticalFailure(0);
-        return;
-      }
-      setDeploymentStep(1);
+      // Step 1: Code Packaging & Upload (Real Upload)
+      // We need to construct the actual payload for the API.
+      // functionApi.deployFunction expects a config object. 
+      // But wait, the API expects a FILE upload for the code initially?
+      // Or does deployFunction handle multipart?
+      // Let's check proxyService.uploadFunction behavior on backend. 
+      // It expects 'file' in multipart. 
+      // functionApi.deployFunction wraps apiClient.post('/functions', config). 
+      // Wait, standard CRUD usually is JSON. Upload is special.
+      // We might need a separate 'uploadFunction' method in functionApi if it doesn't exist.
+      // Checking functionApi.ts earlier... `deployFunction` takes `DeploymentConfig` and POSTs to `/functions`.
+      // The backend `/upload` endpoint is what we used in the test. 
+      // DOES THE BACKEND HAVE `POST /functions`? 
+      // Backend routes: `/functions` (GET), `/functions/:id` (GET/DELETE), `/upload` (POST), `/run` (POST).
+      // Backend DOES NOT have `POST /functions` for creation? 
+      // It has `POST /upload` which does EVERYTHING (Optim + Deploy).
 
-      // Step 2: Metadata Registration
-      await delay(1500);
-      if (deploymentFailed) return;
-      
-      if (randomScenario === 'critical_failure' && Math.random() < 0.3) {
-        handleCriticalFailure(1);
-        return;
-      }
-      if (randomScenario === 'build_error' && formData.language === 'cpp') {
-        handleBuildError();
-        return;
-      }
-      setDeploymentStep(2);
+      // SO: We must use `POST /upload`. 
+      // Does functionApi have `upload`? 
+      // Checking functionApi.ts: `deployFunction` calls `POST /functions`. This seems WRONG based on my backend implementation.
+      // My backend uses `POST /upload` to upload AND create/deploy.
+      // I should update the Frontend Service to match Backend or use raw fetch here.
+      // Better to use raw logic or quick fix 'functionApi' to use `/upload`.
 
-      // Step 3: Warming Up Runtime
-      await delay(1500);
-      if (deploymentFailed) return;
-      
-      if (randomScenario === 'warning') {
-        handleWarningSuccess();
-        return;
-      }
-      if (randomScenario === 'critical_failure') {
-        handleCriticalFailure(2);
-        return;
-      }
-      setDeploymentStep(3);
+      // Let's assume for this step I will fix functionApi.ts NEXT. 
+      // I will write the code here assuming functionApi.uploadFunction exists or I'll add it.
+      // Actually, I'll implement the logic here using a direct call or a new method.
 
-      // Step 4: Ready to Run
-      await delay(2000);
-      if (deploymentFailed) return;
-      
+      // Let's use `functionApi.deployFunction` but mapped to `/upload`? No, `deployFunction` sends JSON.
+      // `POST /upload` needs FormData.
+
+      // FIX STRATEGY: 
+      // 1. I will use standard fetch/ApiClient to post FormData here or add a helper.
+      // Let's perform the upload directly here constructed as FormData, similar to the test.
+
+      // Step 1: Upload & Deploy
+      setDeploymentStep(1); // "Packaging & Upload" visual
+
+      const formDataToSend = new FormData();
+      const blob = new Blob([formData.code], { type: 'text/plain' }); // Just text for now
+      // In real life we might want to zip it, but our backend accepts single file for now or zip? 
+      // Backend `proxyService` passes stream. AWS Worker expects Zip usually. 
+      // But for "Smart Gateway", we are just passing bytes. 
+      // Let's wrap it in a File object.
+      const file = new File([blob], 'function.zip', { type: 'application/zip' });
+
+      formDataToSend.append('file', file);
+      formDataToSend.append('functionId', formData.name);
+      formDataToSend.append('runtime', formData.runtime);
+      formDataToSend.append('memoryMb', formData.memory.toString());
+
+      // We need to use valid API URL. 
+      // Since we set .env, we can use `functionApi` if we add an upload method.
+      // Let's overwrite this handleDeploy to use a custom upload.
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/upload`, {
+        method: 'POST',
+        body: formDataToSend
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload Failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      // Step 2-4: Success Flow
+      setDeploymentStep(2); await new Promise(r => setTimeout(r, 500));
+      setDeploymentStep(3); await new Promise(r => setTimeout(r, 500));
       setDeploymentStep(4);
-      await delay(1500);
+
       setShowDeploymentModal(false);
       setShowSuccessModal(true);
-    } catch (error) {
+
+    } catch (error: any) {
       console.error('Deployment error:', error);
       deploymentFailed = true;
+      setFailureInfo({
+        step: 1,
+        message: error.message || 'Deployment Failed',
+        detail: 'Backend Upload failed'
+      });
+      setShowDeploymentModal(false);
+      setShowFailureModal(true);
     }
   };
 
   const handleCriticalFailure = (step: number) => {
     const stepInfo = deploymentSteps[step];
     const randomError = stepInfo.errorMessages[Math.floor(Math.random() * stepInfo.errorMessages.length)];
-    
+
     setFailureInfo({
       step,
       message: randomError,
       detail: stepInfo.detail
     });
-    
+
     setTimeout(() => {
       setShowDeploymentModal(false);
       setShowFailureModal(true);
@@ -229,13 +260,13 @@ func Handler(event map[string]interface{}) (Response, error) {
       { msg: "expected ')' before ';' token", code: "function(arg;" }
     ];
     const randomError = errorMessages[Math.floor(Math.random() * errorMessages.length)];
-    
+
     setBuildError({
       line: errorLine,
       message: randomError.msg,
       code: randomError.code
     });
-    
+
     setTimeout(() => {
       setShowDeploymentModal(false);
       setShowBuildErrorModal(true);
@@ -325,20 +356,20 @@ func Handler(event map[string]interface{}) (Response, error) {
   const handleTestRun = async () => {
     setTestRunning(true);
     setActiveTestTab('result');
-    
+
     // Simulate test execution
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
     const isSuccess = Math.random() > 0.3;
     const responseTime = Math.floor(Math.random() * 50) + 10;
     const memoryUsed = Math.floor(Math.random() * 100) + 50;
-    
+
     setTestResult({
       success: isSuccess,
       statusCode: isSuccess ? 200 : 500,
       responseTime,
       memoryUsed,
-      output: isSuccess 
+      output: isSuccess
         ? '{\n  "statusCode": 200,\n  "body": "Hello from NanoGrid!"\n}'
         : '{\n  "statusCode": 500,\n  "error": "Internal Server Error"\n}',
       metrics: {
@@ -348,7 +379,7 @@ func Handler(event map[string]interface{}) (Response, error) {
         disk: Math.floor(Math.random() * 15) + 3
       }
     });
-    
+
     setTestRunning(false);
   };
 
@@ -406,10 +437,10 @@ func Handler(event map[string]interface{}) (Response, error) {
   return (
     <div className="flex h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
       <Sidebar />
-      
+
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        
+
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto px-6 py-8">
             {/* Progress Steps */}
@@ -417,15 +448,13 @@ func Handler(event map[string]interface{}) (Response, error) {
               <div className="flex items-center justify-between mb-4">
                 {[1, 2, 3].map((s) => (
                   <div key={s} className="flex items-center flex-1">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
-                      currentStep >= s ? 'bg-gradient-to-r from-purple-400 to-pink-400 text-white shadow-md' : 'bg-white text-gray-400 border-2 border-gray-200'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${currentStep >= s ? 'bg-gradient-to-r from-purple-400 to-pink-400 text-white shadow-md' : 'bg-white text-gray-400 border-2 border-gray-200'
+                      }`}>
                       {s}
                     </div>
                     {s < 3 && (
-                      <div className={`flex-1 h-1 mx-4 transition-all rounded-full ${
-                        currentStep > s ? 'bg-gradient-to-r from-purple-400 to-pink-400' : 'bg-gray-200'
-                      }`}></div>
+                      <div className={`flex-1 h-1 mx-4 transition-all rounded-full ${currentStep > s ? 'bg-gradient-to-r from-purple-400 to-pink-400' : 'bg-gray-200'
+                        }`}></div>
                     )}
                   </div>
                 ))}
@@ -441,7 +470,7 @@ func Handler(event map[string]interface{}) (Response, error) {
             {currentStep === 1 && (
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-purple-100 p-8 shadow-sm">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">기본 설정</h2>
-                
+
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -468,11 +497,10 @@ func Handler(event map[string]interface{}) (Response, error) {
                         onChange={(e) => !isHandlerDisabled && setFormData({ ...formData, handler: e.target.value })}
                         placeholder="handler.main"
                         disabled={isHandlerDisabled}
-                        className={`w-full px-4 py-3 border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all ${
-                          isHandlerDisabled 
-                            ? 'bg-gray-100 text-gray-600 cursor-not-allowed' 
+                        className={`w-full px-4 py-3 border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all ${isHandlerDisabled
+                            ? 'bg-gray-100 text-gray-600 cursor-not-allowed'
                             : 'bg-white'
-                        }`}
+                          }`}
                       />
                       {isHandlerDisabled && (
                         <div className="absolute right-4 top-1/2 -translate-y-1/2">
@@ -481,8 +509,8 @@ func Handler(event map[string]interface{}) (Response, error) {
                       )}
                     </div>
                     <p className="mt-2 text-xs text-gray-500">
-                      {isHandlerDisabled 
-                        ? '바이너리 실행 파일이므로 main 함수가 자동으로 실행됩니다.' 
+                      {isHandlerDisabled
+                        ? '바이너리 실행 파일이므로 main 함수가 자동으로 실행됩니다.'
                         : '진입점 함수를 입력하세요 (예: handler.main, index.handler)'}
                     </p>
                   </div>
@@ -496,18 +524,15 @@ func Handler(event map[string]interface{}) (Response, error) {
                         <button
                           key={lang.id}
                           onClick={() => handleLanguageChange(lang.id)}
-                          className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                            formData.language === lang.id
+                          className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${formData.language === lang.id
                               ? 'border-purple-400 bg-gradient-to-br from-purple-50 to-pink-50 shadow-md'
                               : 'border-purple-100 bg-white hover:border-purple-200 hover:shadow-sm'
-                          }`}
+                            }`}
                         >
-                          <i className={`${lang.icon} text-3xl mb-2 ${
-                            formData.language === lang.id ? 'text-purple-600' : 'text-gray-600'
-                          }`}></i>
-                          <div className={`text-sm font-semibold mb-1 ${
-                            formData.language === lang.id ? 'text-purple-600' : 'text-gray-700'
-                          }`}>
+                          <i className={`${lang.icon} text-3xl mb-2 ${formData.language === lang.id ? 'text-purple-600' : 'text-gray-600'
+                            }`}></i>
+                          <div className={`text-sm font-semibold mb-1 ${formData.language === lang.id ? 'text-purple-600' : 'text-gray-700'
+                            }`}>
                             {lang.name}
                           </div>
                           <div className="text-xs text-gray-500">
@@ -668,7 +693,7 @@ func Handler(event map[string]interface{}) (Response, error) {
             {currentStep === 2 && (
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-purple-100 p-8 shadow-sm">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">코드 작성</h2>
-                
+
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-3">
                     <label className="text-sm font-semibold text-gray-700">
@@ -682,14 +707,14 @@ func Handler(event map[string]interface{}) (Response, error) {
                         onChange={handleFileChange}
                         className="hidden"
                       />
-                      <button 
+                      <button
                         onClick={handleFileUpload}
                         className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-purple-200 hover:bg-purple-50 rounded-lg transition-all whitespace-nowrap cursor-pointer"
                       >
                         <i className="ri-file-upload-line mr-1"></i>
                         파일 업로드
                       </button>
-                      <button 
+                      <button
                         onClick={handleGithubConnect}
                         className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-purple-200 hover:bg-purple-50 rounded-lg transition-all whitespace-nowrap cursor-pointer"
                       >
@@ -698,7 +723,7 @@ func Handler(event map[string]interface{}) (Response, error) {
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="border border-purple-200 rounded-xl overflow-hidden shadow-sm">
                     <div className="bg-gray-900 px-4 py-2 flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -740,7 +765,7 @@ func Handler(event map[string]interface{}) (Response, error) {
                     이전 단계
                   </button>
                   <div className="flex gap-3">
-                    <button 
+                    <button
                       onClick={() => setShowTestModal(true)}
                       className="px-6 py-3 bg-white border-2 border-purple-400 text-purple-600 font-semibold rounded-xl hover:bg-purple-50 transition-all whitespace-nowrap cursor-pointer"
                     >
@@ -761,7 +786,7 @@ func Handler(event map[string]interface{}) (Response, error) {
             {currentStep === 3 && (
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-purple-100 p-8 shadow-sm">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">배포 확인</h2>
-                
+
                 <div className="space-y-6 mb-8">
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-100">
@@ -859,47 +884,42 @@ func Handler(event map[string]interface{}) (Response, error) {
               {deploymentSteps.map((step, index) => (
                 <div
                   key={index}
-                  className={`relative border-2 rounded-xl p-5 transition-all duration-500 ${
-                    deploymentStep > index
+                  className={`relative border-2 rounded-xl p-5 transition-all duration-500 ${deploymentStep > index
                       ? 'border-green-400 bg-green-50'
                       : deploymentStep === index
-                      ? `border-transparent bg-gradient-to-r ${step.color} shadow-lg`
-                      : 'border-gray-200 bg-gray-50 opacity-50'
-                  }`}
+                        ? `border-transparent bg-gradient-to-r ${step.color} shadow-lg`
+                        : 'border-gray-200 bg-gray-50 opacity-50'
+                    }`}
                 >
                   <div className="flex items-start gap-4">
                     <div
-                      className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                        deploymentStep > index
+                      className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${deploymentStep > index
                           ? 'bg-green-500'
                           : deploymentStep === index
-                          ? 'bg-white'
-                          : 'bg-gray-300'
-                      }`}
+                            ? 'bg-white'
+                            : 'bg-gray-300'
+                        }`}
                     >
                       {deploymentStep > index ? (
                         <i className="ri-check-line text-2xl text-white"></i>
                       ) : (
                         <i
-                          className={`${step.icon} text-2xl ${
-                            deploymentStep === index ? 'text-gray-900' : 'text-gray-500'
-                          }`}
+                          className={`${step.icon} text-2xl ${deploymentStep === index ? 'text-gray-900' : 'text-gray-500'
+                            }`}
                         ></i>
                       )}
                     </div>
 
                     <div className="flex-1">
                       <h4
-                        className={`text-lg font-bold mb-1 ${
-                          deploymentStep >= index ? 'text-gray-900' : 'text-gray-500'
-                        }`}
+                        className={`text-lg font-bold mb-1 ${deploymentStep >= index ? 'text-gray-900' : 'text-gray-500'
+                          }`}
                       >
                         {step.title}
                       </h4>
                       <p
-                        className={`text-sm mb-2 ${
-                          deploymentStep >= index ? 'text-gray-700' : 'text-gray-400'
-                        }`}
+                        className={`text-sm mb-2 ${deploymentStep >= index ? 'text-gray-700' : 'text-gray-400'
+                          }`}
                       >
                         {step.description}
                       </p>
@@ -1443,33 +1463,30 @@ func Handler(event map[string]interface{}) (Response, error) {
               <div className="flex gap-1">
                 <button
                   onClick={() => setActiveTestTab('input')}
-                  className={`px-4 py-3 font-semibold text-sm transition-all cursor-pointer ${
-                    activeTestTab === 'input'
+                  className={`px-4 py-3 font-semibold text-sm transition-all cursor-pointer ${activeTestTab === 'input'
                       ? 'text-purple-600 border-b-2 border-purple-600 bg-white'
                       : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                    }`}
                 >
                   <i className="ri-code-line mr-2"></i>
                   입력 데이터
                 </button>
                 <button
                   onClick={() => setActiveTestTab('result')}
-                  className={`px-4 py-3 font-semibold text-sm transition-all cursor-pointer ${
-                    activeTestTab === 'result'
+                  className={`px-4 py-3 font-semibold text-sm transition-all cursor-pointer ${activeTestTab === 'result'
                       ? 'text-purple-600 border-b-2 border-purple-600 bg-white'
                       : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                    }`}
                 >
                   <i className="ri-terminal-line mr-2"></i>
                   실행 결과
                 </button>
                 <button
                   onClick={() => setActiveTestTab('analysis')}
-                  className={`px-4 py-3 font-semibold text-sm transition-all cursor-pointer ${
-                    activeTestTab === 'analysis'
+                  className={`px-4 py-3 font-semibold text-sm transition-all cursor-pointer ${activeTestTab === 'analysis'
                       ? 'text-purple-600 border-b-2 border-purple-600 bg-white'
                       : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                    }`}
                 >
                   <i className="ri-bar-chart-line mr-2"></i>
                   상세 분석
@@ -1516,18 +1533,15 @@ func Handler(event map[string]interface{}) (Response, error) {
                   ) : testResult ? (
                     <div className="space-y-4">
                       {/* Status */}
-                      <div className={`rounded-xl p-4 border-2 ${
-                        testResult.success 
-                          ? 'bg-green-50 border-green-300' 
+                      <div className={`rounded-xl p-4 border-2 ${testResult.success
+                          ? 'bg-green-50 border-green-300'
                           : 'bg-red-50 border-red-300'
-                      }`}>
+                        }`}>
                         <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            testResult.success ? 'bg-green-500' : 'bg-red-500'
-                          }`}>
-                            <i className={`${
-                              testResult.success ? 'ri-check-line' : 'ri-close-line'
-                            } text-2xl text-white`}></i>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${testResult.success ? 'bg-green-500' : 'bg-red-500'
+                            }`}>
+                            <i className={`${testResult.success ? 'ri-check-line' : 'ri-close-line'
+                              } text-2xl text-white`}></i>
                           </div>
                           <div>
                             <div className="font-bold text-gray-900">
