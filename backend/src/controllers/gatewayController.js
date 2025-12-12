@@ -8,23 +8,37 @@ export const gatewayController = {
     // GET /functions
     async listFunctions(req, res) {
         try {
-            // 1. Fetch from AWS
-            const awsFunctions = await proxyService.fetch('/functions');
-            if (!Array.isArray(awsFunctions)) {
-                // If AWS is down, we might want to return local known state or empty
-                // For now, return empty or error
-                return res.status(503).json({ error: 'AWS Controller Unavailable', details: awsFunctions });
-            }
-
-            // 2. Fetch Local Telemetry
+            // 1. Fetch Local Telemetry First (Always available)
             const localStats = await telemetryService.getAll();
 
-            // 3. Merge
-            const merged = awsFunctions.map(fn => {
-                const stats = localStats[fn.functionId] || { calls: 0, status: 'READY' };
+            // 2. Try Fetch from AWS
+            let awsFunctions = [];
+            try {
+                awsFunctions = await proxyService.fetch('/functions');
+            } catch (e) {
+                logger.warn('Upstream AWS unavailable, serving local stats only', { error: e.message });
+            }
+
+            if (!Array.isArray(awsFunctions)) {
+                awsFunctions = [];
+            }
+
+            // 3. Merge Strategy
+            const allFunctionIds = new Set([
+                ...awsFunctions.map(f => f.functionId),
+                ...Object.keys(localStats)
+            ]);
+
+            const merged = Array.from(allFunctionIds).map(fid => {
+                const awsFn = awsFunctions.find(f => f.functionId === fid) || {};
+                const local = localStats[fid] || { calls: 0, status: 'UNKNOWN' };
+
                 return {
-                    ...fn,
-                    local_stats: stats
+                    functionId: fid,
+                    name: awsFn.name || "Unknown (Offline)",
+                    runtime: awsFn.runtime || "unknown",
+                    status: awsFn.status || local.status,
+                    local_stats: local
                 };
             });
 
