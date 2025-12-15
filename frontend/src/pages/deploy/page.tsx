@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
 import { functionApi } from '../../services/functionApi'; // Import API
+import JSZip from 'jszip';
 
 export default function DeployPage() {
   const navigate = useNavigate();
@@ -144,54 +145,33 @@ func Handler(event map[string]interface{}) (Response, error) {
     setShowDeploymentModal(true);
     setDeploymentStep(0);
 
-    // Reset scenarios/failures logic (removed)
     let deploymentFailed = false;
 
     try {
       // Step 1: Code Packaging & Upload (Real Upload)
-      // We need to construct the actual payload for the API.
-      // functionApi.deployFunction expects a config object. 
-      // But wait, the API expects a FILE upload for the code initially?
-      // Or does deployFunction handle multipart?
-      // Let's check proxyService.uploadFunction behavior on backend. 
-      // It expects 'file' in multipart. 
-      // functionApi.deployFunction wraps apiClient.post('/functions', config). 
-      // Wait, standard CRUD usually is JSON. Upload is special.
-      // We might need a separate 'uploadFunction' method in functionApi if it doesn't exist.
-      // Checking functionApi.ts earlier... `deployFunction` takes `DeploymentConfig` and POSTs to `/functions`.
-      // The backend `/upload` endpoint is what we used in the test. 
-      // DOES THE BACKEND HAVE `POST /functions`? 
-      // Backend routes: `/functions` (GET), `/functions/:id` (GET/DELETE), `/upload` (POST), `/run` (POST).
-      // Backend DOES NOT have `POST /functions` for creation? 
-      // It has `POST /upload` which does EVERYTHING (Optim + Deploy).
-
-      // SO: We must use `POST /upload`. 
-      // Does functionApi have `upload`? 
-      // Checking functionApi.ts: `deployFunction` calls `POST /functions`. This seems WRONG based on my backend implementation.
-      // My backend uses `POST /upload` to upload AND create/deploy.
-      // I should update the Frontend Service to match Backend or use raw fetch here.
-      // Better to use raw logic or quick fix 'functionApi' to use `/upload`.
-
-      // Let's assume for this step I will fix functionApi.ts NEXT. 
-      // I will write the code here assuming functionApi.uploadFunction exists or I'll add it.
-      // Actually, I'll implement the logic here using a direct call or a new method.
-
-      // Let's use `functionApi.deployFunction` but mapped to `/upload`? No, `deployFunction` sends JSON.
-      // `POST /upload` needs FormData.
-
-      // FIX STRATEGY: 
-      // 1. I will use standard fetch/ApiClient to post FormData here or add a helper.
-      // Let's perform the upload directly here constructed as FormData, similar to the test.
+      // Sending FormData to /upload endpoint
 
       // Step 1: Upload & Deploy
       setDeploymentStep(1); // "Packaging & Upload" visual
 
       const formDataToSend = new FormData();
-      const blob = new Blob([formData.code], { type: 'text/plain' }); // Just text for now
-      // In real life we might want to zip it, but our backend accepts single file for now or zip? 
-      // Backend `proxyService` passes stream. AWS Worker expects Zip usually. 
-      // But for "Smart Gateway", we are just passing bytes. 
-      // Let's wrap it in a File object.
+      // Real ZIP Compression using JSZip
+      const zip = new JSZip();
+
+      // Determine filename based on runtime
+      const filenameMap: Record<string, string> = {
+        'python': 'function.py',
+        'nodejs': 'index.js',
+        'cpp': 'main.cpp',
+        'go': 'main.go'
+      };
+
+      // Default to python if unknown, but we have strict types locally
+      const codeFilename = filenameMap[formData.language] || 'function.txt';
+      zip.file(codeFilename, formData.code);
+
+      // Generate Zip Blob
+      const blob = await zip.generateAsync({ type: 'blob' });
       const file = new File([blob], 'function.zip', { type: 'application/zip' });
 
       formDataToSend.append('file', file);
@@ -199,9 +179,7 @@ func Handler(event map[string]interface{}) (Response, error) {
       formDataToSend.append('runtime', formData.runtime);
       formDataToSend.append('memoryMb', formData.memory.toString());
 
-      // We need to use valid API URL. 
-      // Since we set .env, we can use `functionApi` if we add an upload method.
-      // Let's overwrite this handleDeploy to use a custom upload.
+      // Use configured API URL or Fallback
 
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://43.203.103.112:8080'}/upload`, {
         method: 'POST',
