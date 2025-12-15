@@ -181,7 +181,7 @@ func Handler(event map[string]interface{}) (Response, error) {
 
       // Use configured API URL or Fallback
 
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://43.203.103.112:8080'}/upload`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://43.203.112.139:8080'}/upload`, {
         method: 'POST',
         headers: {
           'x-api-key': 'test-api-key',
