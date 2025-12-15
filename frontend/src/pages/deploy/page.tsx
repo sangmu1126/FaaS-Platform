@@ -37,6 +37,7 @@ export default function DeployPage() {
     warmPoolSize: 2,
     envVars: [] as Array<{ key: string; value: string }>
   });
+  const [deployedFunctionId, setDeployedFunctionId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -205,15 +206,19 @@ func Handler(event map[string]interface{}) (Response, error) {
         body: formDataToSend
       });
 
+
       if (!response.ok) {
         throw new Error(`Upload Failed: ${response.statusText}`);
       }
 
       const result = await response.json();
+      if (result.functionId) {
+        setDeployedFunctionId(result.functionId);
+      }
 
-      // Step 2-4: Success Flow
-      setDeploymentStep(2); await new Promise(r => setTimeout(r, 500));
-      setDeploymentStep(3); await new Promise(r => setTimeout(r, 500));
+      // Step 2-4: Success Flow (Immediate transition as backend handles registration)
+      setDeploymentStep(2);
+      setDeploymentStep(3);
       setDeploymentStep(4);
 
       setShowDeploymentModal(false);
@@ -232,50 +237,7 @@ func Handler(event map[string]interface{}) (Response, error) {
     }
   };
 
-  const handleCriticalFailure = (step: number) => {
-    const stepInfo = deploymentSteps[step];
-    const randomError = stepInfo.errorMessages[Math.floor(Math.random() * stepInfo.errorMessages.length)];
 
-    setFailureInfo({
-      step,
-      message: randomError,
-      detail: stepInfo.detail
-    });
-
-    setTimeout(() => {
-      setShowDeploymentModal(false);
-      setShowFailureModal(true);
-    }, 1000);
-  };
-
-  const handleBuildError = () => {
-    const errorLine = Math.floor(Math.random() * 20) + 10;
-    const errorMessages = [
-      { msg: "expected ';' before 'return'", code: "return result" },
-      { msg: "undefined reference to 'handler'", code: "extern handler()" },
-      { msg: "'iostream' file not found", code: "#include <iostream>" },
-      { msg: "expected ')' before ';' token", code: "function(arg;" }
-    ];
-    const randomError = errorMessages[Math.floor(Math.random() * errorMessages.length)];
-
-    setBuildError({
-      line: errorLine,
-      message: randomError.msg,
-      code: randomError.code
-    });
-
-    setTimeout(() => {
-      setShowDeploymentModal(false);
-      setShowBuildErrorModal(true);
-    }, 1000);
-  };
-
-  const handleWarningSuccess = () => {
-    setTimeout(() => {
-      setShowDeploymentModal(false);
-      setShowWarningModal(true);
-    }, 1000);
-  };
 
   const handleRetryDeploy = () => {
     setShowFailureModal(false);
@@ -351,33 +313,46 @@ func Handler(event map[string]interface{}) (Response, error) {
   };
 
   const handleTestRun = async () => {
+    if (!deployedFunctionId) {
+      alert("배포된 함수 ID를 찾을 수 없습니다.");
+      return;
+    }
+
     setTestRunning(true);
     setActiveTestTab('result');
 
-    // Simulate test execution
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      const payload = JSON.parse(testInput);
+      const startTime = Date.now();
+      const result: any = await functionApi.invokeFunction(deployedFunctionId, payload);
+      const endTime = Date.now();
 
-    const isSuccess = Math.random() > 0.3;
-    const responseTime = Math.floor(Math.random() * 50) + 10;
-    const memoryUsed = Math.floor(Math.random() * 100) + 50;
-
-    setTestResult({
-      success: isSuccess,
-      statusCode: isSuccess ? 200 : 500,
-      responseTime,
-      memoryUsed,
-      output: isSuccess
-        ? '{\n  "statusCode": 200,\n  "body": "Hello from NanoGrid!"\n}'
-        : '{\n  "statusCode": 500,\n  "error": "Internal Server Error"\n}',
-      metrics: {
-        cpu: Math.floor(Math.random() * 30) + 10,
-        memory: memoryUsed,
-        network: Math.floor(Math.random() * 20) + 5,
-        disk: Math.floor(Math.random() * 15) + 3
-      }
-    });
-
-    setTestRunning(false);
+      setTestResult({
+        success: result.statusCode >= 200 && result.statusCode < 300,
+        statusCode: result.statusCode,
+        responseTime: endTime - startTime, // Client-side measured latency
+        memoryUsed: 'N/A', // Not currently returned by standard invocation response
+        output: typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2),
+        metrics: {
+          cpu: 0,
+          memory: 0,
+          network: 0,
+          disk: 0
+        }
+      });
+    } catch (error: any) {
+      console.error("Test run failed", error);
+      setTestResult({
+        success: false,
+        statusCode: 500,
+        responseTime: 0,
+        memoryUsed: 0,
+        output: JSON.stringify({ error: error.message || "Execution Failed" }, null, 2),
+        metrics: { cpu: 0, memory: 0, network: 0, disk: 0 }
+      });
+    } finally {
+      setTestRunning(false);
+    }
   };
 
   const deploymentSteps = [
