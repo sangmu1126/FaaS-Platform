@@ -303,6 +303,14 @@ app.post('/run', authenticate, rateLimiter, async (req, res) => {
         }));
         if (!Item) return res.status(404).json({ error: "Function not found" });
 
+        // 3.1 Increment Invocation Count (Fire & Forget)
+        db.send(new UpdateItemCommand({
+            TableName: process.env.TABLE_NAME,
+            Key: { functionId: { S: functionId } },
+            UpdateExpression: "ADD invocations :inc",
+            ExpressionAttributeValues: { ":inc": { N: "1" } }
+        })).catch(err => logger.error("Failed to update invocation count", err));
+
         const taskPayload = {
             requestId,
             functionId,
@@ -402,6 +410,7 @@ app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res)
             runtime: item.runtime ? item.runtime.S : "python",
             description: item.description ? item.description.S : "",
             memoryMb: item.memoryMb ? parseInt(item.memoryMb.N) : 128,
+            invocations: item.invocations ? parseInt(item.invocations.N) : 0,
             uploadedAt: item.uploadedAt ? item.uploadedAt.S : new Date().toISOString()
         }));
         res.json(items);
