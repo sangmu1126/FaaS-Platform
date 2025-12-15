@@ -362,7 +362,7 @@ function waitForResult(requestId) {
     return new Promise((resolve) => {
         let completed = false;
 
-        // Listener for the result
+
         const onResult = (msg) => {
             if (completed) return;
             cleanup();
@@ -384,12 +384,12 @@ function waitForResult(requestId) {
             responseEmitter.removeListener(requestId, onResult);
         }
 
-        // Register the one-time listener
+
         responseEmitter.once(requestId, onResult);
     });
 }
 
-// 1. 함수 목록 조회 (GET /functions)
+
 // 1. 함수 목록 조회 (GET /functions)
 app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res) => {
     try {
@@ -401,6 +401,7 @@ app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res)
             name: item.originalName ? item.originalName.S : "Unknown",
             runtime: item.runtime ? item.runtime.S : "python",
             description: item.description ? item.description.S : "",
+            memoryMb: item.memoryMb ? parseInt(item.memoryMb.N) : 128,
             uploadedAt: item.uploadedAt ? item.uploadedAt.S : new Date().toISOString()
         }));
         res.json(items);
@@ -410,8 +411,8 @@ app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res)
     }
 });
 
-// 2. 로그 조회 (GET /logs)
-// (일단 에러 안 나게 빈 데이터라도 줌)
+
+
 // 2. 로그 조회 (GET /logs) - Real In-Memory Logs
 app.get(['/logs', '/api/logs'], cors(), authenticate, (req, res) => {
     res.json(logBuffer);
