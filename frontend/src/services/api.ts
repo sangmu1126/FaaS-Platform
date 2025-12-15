@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.nanogrid.dev';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://43.203.112.139:8080';
 
 interface ApiError {
   message: string;
