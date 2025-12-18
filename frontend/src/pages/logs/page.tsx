@@ -22,7 +22,7 @@ export default function LogsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [functionsList, setFunctionsList] = useState<string[]>([]);
+  const [functionsList, setFunctionsList] = useState<{ id: string; name: string }[]>([]);
   const logsPerPage = 20;
 
   const fetchLogs = async () => {
@@ -63,7 +63,10 @@ export default function LogsPage() {
 
     // Fetch function list for filter
     functionApi.getFunctions().then(funcs => {
-      setFunctionsList(funcs.map((f: any) => f.name || f.functionId));
+      setFunctionsList(funcs.map((f: any) => ({
+        id: f.functionId,
+        name: f.name || f.functionId
+      })));
     }).catch(console.error);
   }, []);
 
@@ -164,8 +167,8 @@ export default function LogsPage() {
                     className="w-full px-4 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
                   >
                     <option value="all">전체 함수</option>
-                    {functionsList.map(name => (
-                      <option key={name} value={name}>{name}</option>
+                    {functionsList.map(func => (
+                      <option key={func.id} value={func.name}>{func.name}</option>
                     ))}
                   </select>
                 </div>
