@@ -9,3 +9,6 @@
 # Secrets
 terraform.tfvars
 .env
+
+# Output
+outputs.json
