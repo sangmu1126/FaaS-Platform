@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://43.203.112.139:8080';
+const API_BASE_URL = 'http://16.184.11.69:8080';
 
 interface ApiError {
   message: string;
@@ -38,6 +38,11 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
+    // Check if body is FormData and remove Content-Type to let browser set boundary
+    if (options.body instanceof FormData) {
+      delete headers['Content-Type'];
+    }
+
     console.log(`[API] ${endpoint} Headers:`, headers); // Debug header issues
 
     try {
@@ -71,16 +76,18 @@ class ApiClient {
   }
 
   async post<T>(endpoint: string, data?: unknown): Promise<T> {
+    const isFormData = data instanceof FormData;
     return this.request<T>(endpoint, {
       method: 'POST',
-      body: data ? JSON.stringify(data) : undefined,
+      body: isFormData ? (data as BodyInit) : (data ? JSON.stringify(data) : undefined),
     });
   }
 
   async put<T>(endpoint: string, data?: unknown): Promise<T> {
+    const isFormData = data instanceof FormData;
     return this.request<T>(endpoint, {
       method: 'PUT',
-      body: data ? JSON.stringify(data) : undefined,
+      body: isFormData ? (data as BodyInit) : (data ? JSON.stringify(data) : undefined),
     });
   }
 
