@@ -14,8 +14,11 @@ const client = require('prom-client');
 
 const app = express();
 app.use(cors());
+// 1. Body Parser first
+app.use(express.json({ limit: '10mb' }));
+
 const PORT = 8080;
-const VERSION = "v2.4";
+const VERSION = "v2.8";
 
 // In-Memory Log Buffer (Ring Buffer)
 const logBuffer = [];
@@ -30,7 +33,7 @@ function addLog(level, msg, context = {}) {
         ...context
     };
 
-    // 1. Stdout for external collectors (Datadog, CloudWatch)
+    // 1. Stdout for external collectors
     if (level === 'ERROR') console.error(JSON.stringify(logEntry));
     else if (level === 'WARN') console.warn(JSON.stringify(logEntry));
     else console.log(JSON.stringify(logEntry));
@@ -81,20 +84,19 @@ let isRedisConnected = false;
 redis.on('error', (err) => { isRedisConnected = false; logger.error("Global Redis Connection Error", err); });
 redis.on('connect', () => { isRedisConnected = true; logger.info("Global Redis Connected Successfully"); });
 
-// Global Redis Subscriber (Optimization)
+// Global Redis Subscriber
 const redisSub = new Redis({
     host: process.env.REDIS_HOST,
     port: 6379,
     retryStrategy: times => Math.min(times * 50, 2000),
     enableOfflineQueue: false,
-    enableReadyCheck: false // Fix for "Connection in subscriber mode" error
+    enableReadyCheck: false
 });
 const responseEmitter = new EventEmitter();
-responseEmitter.setMaxListeners(0); // 0 means unlimited listeners (prevent memory leak warning)
+responseEmitter.setMaxListeners(0);
 
 redisSub.on('connect', () => {
     logger.info("Global Redis Subscriber Connected");
-    // Listen for all result channels
     redisSub.psubscribe('result:*', (err, count) => {
         if (err) logger.error("Failed to subscribe to result:*", err);
         else logger.info(`Subscribed to result channels. Count: ${count}`);
@@ -102,18 +104,53 @@ redisSub.on('connect', () => {
 });
 
 redisSub.on('pmessage', (pattern, channel, message) => {
-    // Channel format: result:{requestId}
     if (pattern === 'result:*') {
         const parts = channel.split(':');
         const requestId = parts[1];
         if (requestId) {
-            // Dispatch to the specific request promise
             responseEmitter.emit(requestId, message);
+
+            // 1. Persist execution log for "Recent Invocations" display
+            // This ensures results appear in the frontend table even if the user isn't actively waiting
+            try {
+                // Safe JSON Parse
+                let result;
+                try {
+                    result = JSON.parse(message);
+                } catch (jsonErr) {
+                    // Log but don't crash if message is malformed
+                    console.error("[ERROR] JSON Parse Failed in Subscriber", jsonErr);
+                    return;
+                }
+
+                if (!result || !result.functionId) return;
+
+                // 2. Normalize fields (Handle CamelCase vs Snake_case differences between Worker/Controller)
+                const duration = result.durationMs !== undefined ? result.durationMs : (result.duration_ms || 0);
+                const memoryBytes = result.peakMemoryBytes !== undefined ? result.peakMemoryBytes : (result.peak_memory_bytes || 0);
+                const memoryMb = memoryBytes ? Math.round(memoryBytes / 1024 / 1024) : 0;
+
+                // 3. Add to In-Memory Log Buffer
+                addLog(
+                    result.status === 'SUCCESS' ? 'INFO' : 'ERROR',
+                    `Function Executed: ${result.functionId}`,
+                    {
+                        functionId: result.functionId,
+                        requestId: requestId,
+                        duration: duration,
+                        memory: memoryMb,
+                        status: result.status,
+                        exitCode: result.exitCode
+                    }
+                );
+            } catch (e) {
+                console.error("Failed to add log in subscriber", e);
+            }
         }
     }
 });
 
-app.use(express.json({ limit: '10mb' }));
+// app.use(express.json) Moved to top
 
 // Auth Middleware
 const authenticate = (req, res, next) => {
@@ -135,7 +172,7 @@ const rateLimiter = async (req, res, next) => {
     try {
         const ip = req.ip || req.connection.remoteAddress;
         const key = `ratelimit:${ip}`;
-        const current = await redis.eval(RATE_LIMIT_SCRIPT, 1, key, 60); // 1 min
+        const current = await redis.eval(RATE_LIMIT_SCRIPT, 1, key, 60);
         res.set('X-RateLimit-Limit', 100);
         res.set('X-RateLimit-Remaining', Math.max(0, 100 - current));
         if (current > 100) return res.status(429).json({ error: "Too Many Requests" });
@@ -155,7 +192,6 @@ const httpRequestDurationMicroseconds = new client.Histogram({
 });
 register.registerMetric(httpRequestDurationMicroseconds);
 
-// Metrics Middleware
 app.use((req, res, next) => {
     const end = httpRequestDurationMicroseconds.startTimer();
     res.on('finish', () => {
@@ -170,14 +206,14 @@ app.use((req, res, next) => {
 const upload = multer({
     storage: multerS3({
         s3: s3,
-        bucket: process.env.BUCKET_NAME, // Must match S3_CODE_BUCKET in Worker
+        bucket: process.env.BUCKET_NAME,
         key: function (req, file, cb) {
             const functionId = uuidv4();
             req.functionId = functionId;
             cb(null, `functions/${functionId}/v1.zip`);
         }
     }),
-    limits: { fileSize: 50 * 1024 * 1024 } // [Security] Limit 50MB
+    limits: { fileSize: 50 * 1024 * 1024 }
 });
 
 // 0. Health Check
@@ -186,7 +222,6 @@ app.get('/health', (req, res) => {
     res.status(status).json({ status: isRedisConnected ? 'OK' : 'ERROR', version: VERSION });
 });
 
-// 0.1 Metrics Endpoint
 app.get('/metrics', async (req, res) => {
     try {
         res.set('Content-Type', register.contentType);
@@ -196,12 +231,10 @@ app.get('/metrics', async (req, res) => {
     }
 });
 
-
-// 0.2 Model Catalog (Proxy to AI Node)
+// 0.2 Model Catalog
 app.get('/models', async (req, res) => {
     try {
         const aiNodeUrl = process.env.AI_NODE_URL || 'http://10.0.20.100:11434';
-        // Resilience: Timeout
         const timeoutMs = parseInt(process.env.AI_NODE_TIMEOUT || "2000");
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -222,7 +255,6 @@ app.get('/models', async (req, res) => {
         res.json({ models });
     } catch (error) {
         logger.error("Model Catalog Error", { error: error.message });
-        // Fallback for reliability (Cold Start prevention logic in client mostly, but here just info)
         res.json({
             models: [{ id: 'llama3:8b', name: 'llama3:8b (Default)', status: 'fallback', details: {} }],
             warning: "Could not fetch dynamic model list from AI Node. showing default."
@@ -230,7 +262,7 @@ app.get('/models', async (req, res) => {
     }
 });
 
-// [Security] Validation Middleware (Headers)
+// [Security] Validation Middleware (Headers) - Imported from reference
 const validateUploadRequest = (req, res, next) => {
     const ALLOWED_RUNTIMES = ["python", "cpp", "nodejs", "go"];
     const runtime = req.headers['x-runtime'] || "python";
@@ -249,39 +281,32 @@ const validateUploadRequest = (req, res, next) => {
 
     req.validatedRuntime = runtime;
     req.validatedMemoryMb = memoryMb;
+    req.functionName = req.headers['x-function-name'] ? decodeURIComponent(req.headers['x-function-name']) : null;
     next();
 };
 
-// 1. Upload
 app.post('/upload', authenticate, rateLimiter, validateUploadRequest, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "No file provided" });
-
-        const runtime = req.validatedRuntime;
-        const memoryMb = req.validatedMemoryMb;
-
         const functionId = req.functionId || uuidv4();
-
         await db.send(new PutItemCommand({
             TableName: process.env.TABLE_NAME,
             Item: {
                 functionId: { S: functionId },
+                name: { S: req.functionName || req.file.originalname },
                 s3Key: { S: req.file.key },
                 originalName: { S: req.file.originalname },
-                runtime: { S: runtime },
-                memoryMb: { N: memoryMb.toString() }, // Auto-Tuner
+                runtime: { S: req.validatedRuntime },
+                memoryMb: { N: req.validatedMemoryMb.toString() },
                 uploadedAt: { S: new Date().toISOString() }
             }
         }));
         logger.info(`Upload Success`, { functionId });
         res.json({ success: true, functionId });
     } catch (error) {
-        // Transaction Safety: Clean up S3 if DB write fails
         if (req.file) {
-            s3.send(new DeleteObjectCommand({
-                Bucket: process.env.BUCKET_NAME,
-                Key: req.file.key
-            })).catch(err => logger.warn("Failed to cleanup orphaned S3 file", err));
+            s3.send(new DeleteObjectCommand({ Bucket: process.env.BUCKET_NAME, Key: req.file.key }))
+                .catch(err => logger.warn("Cleanup failed", err));
         }
         logger.error("Upload Error", error);
         res.status(500).json({ error: error.message });
@@ -303,47 +328,37 @@ app.post('/run', authenticate, rateLimiter, async (req, res) => {
         }));
         if (!Item) return res.status(404).json({ error: "Function not found" });
 
-        // 3.1 Increment Invocation Count (Fire & Forget)
         db.send(new UpdateItemCommand({
             TableName: process.env.TABLE_NAME,
             Key: { functionId: { S: functionId } },
             UpdateExpression: "ADD invocations :inc",
             ExpressionAttributeValues: { ":inc": { N: "1" } }
-        })).catch(err => logger.error("Failed to update invocation count", err));
+        })).catch(err => logger.error("Count Update Failed", err));
 
         const taskPayload = {
             requestId,
             functionId,
             runtime: Item.runtime ? Item.runtime.S : "python",
-            memoryMb: Item.memoryMb ? parseInt(Item.memoryMb.N) : 128, // Auto-Tuner
+            memoryMb: Item.memoryMb ? parseInt(Item.memoryMb.N) : 128,
             s3Bucket: process.env.BUCKET_NAME,
             s3Key: Item.s3Key ? Item.s3Key.S : "",
-            timeoutMs: 300000, // Worker Timeout: 5 min
+            timeoutMs: 300000,
             input: inputData || {},
-            modelId: modelId || "llama3:8b" // Dynamic Model Selection
+            modelId: modelId || "llama3:8b"
         };
 
         const sendMessageParams = {
             QueueUrl: process.env.SQS_URL,
             MessageBody: JSON.stringify(taskPayload)
         };
-
-        // Add GroupId for FIFO queues (Ignored for Standard queues)
         if (process.env.SQS_URL.endsWith('.fifo')) {
             sendMessageParams.MessageGroupId = "default";
-            // Use requestId for deduplication
             sendMessageParams.MessageDeduplicationId = requestId;
         }
 
         await sqs.send(new SendMessageCommand(sendMessageParams));
 
-        if (isAsync) {
-            return res.status(202).json({
-                status: "ACCEPTED",
-                message: "Job submitted.",
-                jobId: requestId
-            });
-        }
+        if (isAsync) return res.status(202).json({ status: "ACCEPTED", jobId: requestId });
 
         const result = await waitForResult(requestId);
         res.json(result);
@@ -354,30 +369,22 @@ app.post('/run', authenticate, rateLimiter, async (req, res) => {
     }
 });
 
-// 3. Status Check (Polling)
 app.get('/status/:jobId', authenticate, async (req, res) => {
     try {
-        // Worker가 완료 후 'job:{jobId}' 키에 결과를 저장해야 함
         const result = await redis.get(`job:${req.params.jobId}`);
         if (!result) return res.json({ status: "pending", message: "Running or not found" });
         res.json(JSON.parse(result));
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 function waitForResult(requestId) {
     return new Promise((resolve) => {
         let completed = false;
-
-
         const onResult = (msg) => {
             if (completed) return;
             cleanup();
             try { resolve(JSON.parse(msg)); } catch (e) { resolve({ raw: msg }); }
         };
-
-        // Controller Wait Timeout: 290s (Worker Timeout 300s보다 약간 짧게)
         const timeout = setTimeout(() => {
             if (!completed) {
                 cleanup();
@@ -385,85 +392,45 @@ function waitForResult(requestId) {
                 resolve({ status: "TIMEOUT", message: "Processing timed out." });
             }
         }, 290000);
-
         function cleanup() {
             completed = true;
             clearTimeout(timeout);
             responseEmitter.removeListener(requestId, onResult);
         }
-
-
         responseEmitter.once(requestId, onResult);
     });
 }
 
-
-// 1. 함수 목록 조회 (GET /functions)
+// GET /functions, /logs, /functions/:id
 app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res) => {
     try {
-        const command = new ScanCommand({ TableName: process.env.TABLE_NAME });
-        const response = await db.send(command);
-
+        const response = await db.send(new ScanCommand({ TableName: process.env.TABLE_NAME }));
         const items = response.Items.map(item => ({
             functionId: item.functionId.S,
-            name: item.originalName ? item.originalName.S : "Unknown",
+            name: item.name ? item.name.S : "Unknown",
             runtime: item.runtime ? item.runtime.S : "python",
-            description: item.description ? item.description.S : "",
             memoryMb: item.memoryMb ? parseInt(item.memoryMb.N) : 128,
             invocations: item.invocations ? parseInt(item.invocations.N) : 0,
             uploadedAt: item.uploadedAt ? item.uploadedAt.S : new Date().toISOString()
         }));
         res.json(items);
-    } catch (error) {
-        logger.error("List Functions Error", error);
-        res.status(500).json([]);
-    }
+    } catch (error) { res.status(500).json([]); }
 });
-
-
-
-// 2. 로그 조회 (GET /logs) - Real In-Memory Logs
-app.get(['/logs', '/api/logs'], cors(), authenticate, (req, res) => {
-    res.json(logBuffer);
-});
-
-// 1. 함수 상세 조회 (GET /functions/:id) - 설정 페이지용
+app.get(['/logs', '/api/logs'], cors(), authenticate, (req, res) => { res.json(logBuffer); });
 app.get(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (req, res) => {
-    const functionId = req.params.id;
     try {
-        const command = new GetItemCommand({
-            TableName: process.env.TABLE_NAME,
-            Key: { functionId: { S: functionId } }
-        });
-        const response = await db.send(command);
-
-        if (!response.Item) {
-            return res.status(404).json({ error: "Function not found" });
-        }
-
+        const response = await db.send(new GetItemCommand({ TableName: process.env.TABLE_NAME, Key: { functionId: { S: req.params.id } } }));
+        if (!response.Item) return res.status(404).json({ error: "Not Found" });
         const item = response.Item;
-        res.json({
-            id: item.functionId.S,
-            functionId: item.functionId.S,
-            name: item.originalName?.S || "Unknown",
-            runtime: item.runtime?.S || "python",
-            description: item.description?.S || "",
-            // S3 키 정보를 줘야 "코드 수정" 때 원본을 알 수 있음
-            s3Key: item.s3Key?.S || "",
-            uploadedAt: item.uploadedAt?.S || ""
-        });
-    } catch (error) {
-        logger.error("Get Detail Error", error);
-        res.status(500).json({ error: error.message });
-    }
+        res.json({ id: item.functionId.S, name: item.name?.S, s3Key: item.s3Key?.S, uploadedAt: item.uploadedAt?.S });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 함수 코드/정보 수정 (PUT /functions/:id)
-// 파일이 있으면 S3 덮어쓰기 + DB 업데이트, 파일 없으면 DB만 업데이트
+// PUT /functions/:id (Update)
 app.put(['/functions/:id', '/api/functions/:id'], authenticate, upload.single('file'), async (req, res) => {
     const functionId = req.params.id;
     try {
-        // 1. 파일이 새로 올라왔으면 S3 Key 업데이트 필요
+        // 1. If new file uploaded, update S3 Key
         let updateExpression = "set updated_at = :t";
         let expressionAttributeValues = {
             ":t": { S: new Date().toISOString() }
@@ -483,7 +450,7 @@ app.put(['/functions/:id', '/api/functions/:id'], authenticate, upload.single('f
                 }
             } catch (ignore) { }
 
-            // 새 파일이 있으면 S3 Key도 업데이트
+            // Update S3 Key
             updateExpression += ", s3Key = :k, originalName = :n";
             expressionAttributeValues[":k"] = { S: req.file.key };
             expressionAttributeValues[":n"] = { S: req.file.originalname };
@@ -511,18 +478,18 @@ app.put(['/functions/:id', '/api/functions/:id'], authenticate, upload.single('f
     }
 });
 
-// 3. 함수 삭제 (DELETE /functions/:id) - S3 파일까지 진짜 삭제
+// DELETE /functions/:id
 app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (req, res) => {
     const functionId = req.params.id;
     try {
-        // 1. 먼저 DB에서 S3 Key를 알아내야 함
+        // 1. Get S3 Key first
         const getCmd = new GetItemCommand({
             TableName: process.env.TABLE_NAME,
             Key: { functionId: { S: functionId } }
         });
         const item = await db.send(getCmd);
 
-        // 2. S3에서 파일 삭제 (비용 절감)
+        // 2. Delete S3 file
         if (item.Item && item.Item.s3Key) {
             await s3.send(new DeleteObjectCommand({
                 Bucket: process.env.BUCKET_NAME,
@@ -530,7 +497,7 @@ app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async
             }));
         }
 
-        // 3. DynamoDB에서 메타데이터 삭제
+        // 3. Delete metadata
         await db.send(new DeleteItemCommand({
             TableName: process.env.TABLE_NAME,
             Key: { functionId: { S: functionId } }
@@ -545,22 +512,23 @@ app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async
     }
 });
 
-// Global Error Handler
+// Improved Global Error Handler
+// Prevents 500 crashes from non-critical errors (e.g. Malformed JSON from curl)
 app.use((err, req, res, next) => {
     logger.error("Global Error Handler", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(err.status || 500).json({ error: err.message || "Internal Server Error" });
 });
 
 const server = app.listen(PORT, () => {
     logger.info(`Infra Controller ${VERSION} Started`, { port: PORT });
 });
-server.setTimeout(300000); // Socket Timeout: 5 min
+server.setTimeout(300000);
 
+// Graceful Shutdown - Merged from reference + safety
 process.on('SIGTERM', () => {
     logger.info("SIGTERM received. Starting graceful shutdown...");
     server.close(() => {
         logger.info("HTTP Server Closed");
-        // Disconnect Redis clients
         Promise.all([
             redis.quit().catch(err => logger.error("Error closing Redis", err)),
             redisSub.quit().catch(err => logger.error("Error closing RedisSub", err))
