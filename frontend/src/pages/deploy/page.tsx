@@ -31,7 +31,7 @@ export default function DeployPage() {
     language: 'python',
     runtime: 'python3.11',
     memory: 512,
-    timeout: 30,
+    timeout: 60, // Default 60s (Backend max: 300s)
     code: '',
     warmPoolEnabled: true,
     warmPoolSize: 2,
