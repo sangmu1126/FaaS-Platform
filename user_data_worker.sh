@@ -39,6 +39,7 @@ WARM_POOL_PYTHON_SIZE=5
 AWS_ACCESS_KEY_ID=${aws_access_key}
 AWS_SECRET_ACCESS_KEY=${aws_secret_key}
 INFRA_API_KEY=test-api-key
+AI_ENDPOINT=http://10.0.20.100:11434
 EOF
 chown ec2-user:ec2-user /home/ec2-user/faas-worker/.env
 
