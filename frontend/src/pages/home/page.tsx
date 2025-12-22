@@ -20,35 +20,29 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
       {/* Navigation */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? 'bg-white/80 backdrop-blur-lg shadow-sm' : 'bg-transparent'
-      }`}>
+      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white/80 backdrop-blur-lg shadow-sm' : 'bg-transparent'
+        }`}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 flex items-center justify-center bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl">
               <i className="ri-flashlight-fill text-white text-lg"></i>
             </div>
-            <span className={`text-xl font-bold transition-colors ${
-              scrolled ? 'text-gray-900' : 'text-gray-900'
-            }`} style={{ fontFamily: 'Space Grotesk, sans-serif' }}>NanoGrid</span>
-          </div>
-          
-          <div className="hidden md:flex items-center gap-8">
-            <a href="#features" className={`text-sm font-medium transition-colors hover:text-purple-500 ${
-              scrolled ? 'text-gray-700' : 'text-gray-700'
-            }`}>Features</a>
-            <a href="#performance" className={`text-sm font-medium transition-colors hover:text-purple-500 ${
-              scrolled ? 'text-gray-700' : 'text-gray-700'
-            }`}>Performance</a>
-            <a href="#demo" className={`text-sm font-medium transition-colors hover:text-purple-500 ${
-              scrolled ? 'text-gray-700' : 'text-gray-700'
-            }`}>Demo</a>
-            <a href="#reviews" className={`text-sm font-medium transition-colors hover:text-purple-500 ${
-              scrolled ? 'text-gray-700' : 'text-gray-700'
-            }`}>Reviews</a>
+            <span className={`text-xl font-bold transition-colors ${scrolled ? 'text-gray-900' : 'text-gray-900'
+              }`} style={{ fontFamily: 'Space Grotesk, sans-serif' }}>FaaS Platform</span>
           </div>
 
-          <button 
+          <div className="hidden md:flex items-center gap-8">
+            <a href="#features" className={`text-sm font-medium transition-colors hover:text-purple-500 ${scrolled ? 'text-gray-700' : 'text-gray-700'
+              }`}>Features</a>
+            <a href="#performance" className={`text-sm font-medium transition-colors hover:text-purple-500 ${scrolled ? 'text-gray-700' : 'text-gray-700'
+              }`}>Performance</a>
+            <a href="#demo" className={`text-sm font-medium transition-colors hover:text-purple-500 ${scrolled ? 'text-gray-700' : 'text-gray-700'
+              }`}>Demo</a>
+            <a href="#reviews" className={`text-sm font-medium transition-colors hover:text-purple-500 ${scrolled ? 'text-gray-700' : 'text-gray-700'
+              }`}>Reviews</a>
+          </div>
+
+          <button
             onClick={handleGetStarted}
             className="px-6 py-2.5 bg-gradient-to-r from-purple-400 to-pink-400 text-white text-sm font-semibold rounded-full hover:shadow-lg transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer"
           >
@@ -65,20 +59,20 @@ export default function Home() {
           <div className="absolute top-40 right-20 w-96 h-96 bg-pink-300/30 rounded-full blur-3xl"></div>
           <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-blue-300/30 rounded-full blur-3xl"></div>
         </div>
-        
+
         <div className="relative z-10 max-w-7xl mx-auto px-6 py-32 w-full">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
               <div className="inline-block px-4 py-1.5 bg-white/60 backdrop-blur-sm rounded-full mb-6 border border-purple-200">
                 <span className="text-purple-600 text-xs font-medium">Production-Grade Serverless</span>
               </div>
-              
+
               <h1 className="text-5xl md:text-7xl font-bold mb-6" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
                 <div className="text-gray-900 mb-2">Zero Cold Start</div>
                 <div className="bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent mb-2">Polyglot FaaS</div>
                 <div className="text-gray-900">Built on EC2</div>
               </h1>
-              
+
               <p className="text-gray-600 text-lg leading-relaxed mb-8 max-w-xl">
                 AWS Lambda의 구조적 한계를 넘어선 자체 FaaS 엔진. Docker 기반 멀티 테넌트 격리로 어떤 언어든 즉시 실행.
               </p>
@@ -102,8 +96,8 @@ export default function Home() {
                   <span className="ml-auto text-gray-500 text-xs">terminal</span>
                 </div>
                 <div className="font-mono text-sm space-y-2">
-                  <div className="text-purple-600">$ nanogrid deploy function.py</div>
-                  <div className="text-gray-500">→ Deploying to NanoGrid...</div>
+                  <div className="text-purple-600">$ faas deploy function.py</div>
+                  <div className="text-gray-500">→ Deploying to FaaS Platform...</div>
                   <div className="text-green-500">✓ Function deployed in 0.3s</div>
                   <div className="text-gray-500">→ Cold start: <span className="text-purple-600 font-bold">0ms</span></div>
                   <div className="text-gray-500">→ Execution time: <span className="text-purple-600 font-bold">12ms</span></div>
@@ -122,7 +116,7 @@ export default function Home() {
             <div className="inline-block px-4 py-1.5 bg-red-100 border border-red-300 rounded-full mb-8">
               <span className="text-red-600 text-sm font-medium">Traditional FaaS</span>
             </div>
-            
+
             <h2 className="text-4xl md:text-6xl font-bold text-gray-800 leading-tight" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               <div className="mb-3">Firecracker VM</div>
               <div className="mb-3 text-5xl md:text-7xl">Runtime Load</div>
@@ -134,9 +128,9 @@ export default function Home() {
         <div className="bg-white flex items-center justify-center p-12">
           <div className="max-w-lg text-center">
             <h2 className="text-4xl md:text-6xl font-bold text-gray-900 mb-8 leading-tight" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-              NanoGrid Approach
+              FaaS Approach
             </h2>
-            
+
             <p className="text-gray-600 text-lg leading-relaxed mb-10">
               Warm Pool + Docker Pause/Unpause 전략으로 VM 부팅 과정 제거. Firecracker 없이 직접 구현한 초고속 실행 환경.
             </p>
@@ -154,7 +148,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-16">
             <h2 className="text-5xl md:text-6xl font-bold text-gray-900 mb-4 md:mb-0" style={{ fontFamily: 'Playfair Display, serif' }}>
-              <div>Why NanoGrid</div>
+              <div>Why FaaS Platform</div>
               <div>Outperforms</div>
             </h2>
             <p className="text-gray-500 text-lg max-w-md">
@@ -286,7 +280,7 @@ export default function Home() {
               <div>
                 <h4 className="text-lg font-bold text-gray-900 mb-2">아키텍처의 유연성</h4>
                 <p className="text-gray-700">
-                  언어가 바뀌었을 뿐, 실행 방식은 동일합니다. NanoGrid는 어떤 언어든 즉시 실행 가능한 Polyglot FaaS입니다.
+                  언어가 바뀌었을 뿐, 실행 방식은 동일합니다. FaaS Platform은 어떤 언어든 즉시 실행 가능한 Polyglot FaaS입니다.
                 </p>
               </div>
             </div>
@@ -360,7 +354,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-gray-700 leading-relaxed">
-                  "Lambda의 Cold Start 문제로 고민하던 중 NanoGrid를 도입했습니다. 응답 시간이 10배 이상 개선되었고, 비용도 크게 절감되었습니다."
+                  "Lambda의 Cold Start 문제로 고민하던 중 FaaS Platform을 도입했습니다. 응답 시간이 10배 이상 개선되었고, 비용도 크게 절감되었습니다."
                 </p>
               </div>
 
@@ -476,15 +470,15 @@ export default function Home() {
                 <div className="w-10 h-10 flex items-center justify-center bg-gradient-to-br from-purple-400 to-pink-400 rounded-xl">
                   <i className="ri-flashlight-fill text-white text-xl"></i>
                 </div>
-                <span className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>NanoGrid</span>
+                <span className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>FaaS Platform</span>
               </div>
               <p className="text-gray-600 mb-6 leading-relaxed" style={{ fontFamily: 'Playfair Display, serif' }}>
                 Zero Cold Start, Polyglot FaaS Platform Built on EC2
               </p>
               <div className="flex items-center gap-3">
-                <input 
-                  type="email" 
-                  placeholder="이메일 주소" 
+                <input
+                  type="email"
+                  placeholder="이메일 주소"
                   className="flex-1 px-4 py-2.5 bg-white border border-purple-200 rounded-lg text-sm focus:outline-none focus:border-purple-400 transition-colors"
                 />
                 <button className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg flex items-center justify-center hover:shadow-lg transition-all cursor-pointer">
@@ -523,7 +517,7 @@ export default function Home() {
 
           <div className="border-t border-purple-200 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-gray-500 text-sm">
-              © 2025 NanoGrid. All rights reserved.
+              © 2025 FaaS Platform. All rights reserved.
             </div>
             <div className="flex items-center gap-6">
               <a href="#" className="w-10 h-10 border border-purple-200 rounded-lg flex items-center justify-center hover:border-purple-400 hover:text-purple-500 transition-all cursor-pointer">

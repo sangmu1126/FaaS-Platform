@@ -73,7 +73,7 @@ export default function Header() {
                         {user?.email?.split('@')[0] || 'Admin User'}
                       </p>
                       <p className="text-xs text-gray-500 truncate">
-                        {user?.email || 'admin@nanogrid.io'}
+                        {user?.email || 'admin@faas.io'}
                       </p>
                     </div>
                   </div>

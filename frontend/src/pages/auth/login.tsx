@@ -40,7 +40,7 @@ export default function Login() {
         <div className="text-center mb-8">
           <Link to="/" className="inline-block">
             <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-              NanoGrid
+              FaaS Platform
             </h1>
           </Link>
           <p className="text-gray-600 mt-2">Sign in to your account</p>

@@ -59,7 +59,7 @@ export default function FunctionDetailPage() {
           memory: 512,
           timeout: 30,
           createdAt: new Date().toISOString(),
-          endpoint: `https://api.nanogrid.io/${id || 'image-processor'}`,
+          endpoint: `https://api.faas.io/${id || 'image-processor'}`,
           description: '이미지 리사이징 및 포맷 변환을 처리하는 함수입니다.'
         };
 
@@ -175,7 +175,7 @@ export default function FunctionDetailPage() {
       : functionItem.uploadedAt
         ? new Date(functionItem.uploadedAt).toLocaleDateString()
         : 'Unknown',
-    endpoint: functionItem.endpoint || `https://api.nanogrid.io/${functionItem.id}`
+    endpoint: functionItem.endpoint || `https://api.faas.io/${functionItem.id}`
   } : null;
 
   if (loading && !functionItem) {
@@ -600,11 +600,11 @@ export default function FunctionDetailPage() {
                             <td className="px-6 py-4 text-sm text-gray-700">{inv.memory === '-' ? '-' : `${inv.memory} MB`}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${inv.status === 'SUCCESS' ? 'bg-green-50 text-green-600 border border-green-200' :
-                                  inv.status === 'UPLOAD' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
-                                    inv.status === 'UPDATE' ? 'bg-purple-50 text-purple-600 border border-purple-200' :
-                                      inv.status === 'PENDING' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200' :
-                                        inv.status === 'DELETE' ? 'bg-gray-50 text-gray-600 border border-gray-200' :
-                                          'bg-red-50 text-red-600 border border-red-200'
+                                inv.status === 'UPLOAD' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                                  inv.status === 'UPDATE' ? 'bg-purple-50 text-purple-600 border border-purple-200' :
+                                    inv.status === 'PENDING' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200' :
+                                      inv.status === 'DELETE' ? 'bg-gray-50 text-gray-600 border border-gray-200' :
+                                        'bg-red-50 text-red-600 border border-red-200'
                                 }`}>
                                 {
                                   inv.status === 'SUCCESS' ? '성공' :

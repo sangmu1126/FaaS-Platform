@@ -21,7 +21,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
           <div className="w-10 h-10 flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl">
             <i className="ri-flashlight-fill text-white text-xl"></i>
           </div>
-          <span className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>NanoGrid</span>
+          <span className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>FaaS Platform</span>
         </Link>
       </div>
 
