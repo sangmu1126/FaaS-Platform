@@ -3,6 +3,8 @@ import shutil
 import time
 import threading
 import zipfile
+import tarfile
+import io
 import json
 import structlog
 import boto3
@@ -182,9 +184,9 @@ class TaskExecutor:
             # Run infinite wait container
             c = self.docker.containers.run(
                 img, command="tail -f /dev/null", detach=True,
-                # Mount host path (for code execution) - Read-only or limiting paths is recommended
-                # Mounting entire work root for convenience here
-                volumes={self.cfg["DOCKER_WORK_DIR_ROOT"]: {"bind": "/workspace", "mode": "rw"}},
+                # [SECURITY] Volume mount removed for isolation.
+                # Code will be injected via 'put_archive' (docker cp) at runtime.
+                # volumes={self.cfg["DOCKER_WORK_DIR_ROOT"]: {"bind": "/workspace", "mode": "rw"}},
                 network_mode="bridge", # Allow AI Endpoint access
                 mem_limit="1024m",   # Default (Will be updated in run)
                 cpu_quota=100000     # 1.0 CPU
@@ -290,6 +292,43 @@ class TaskExecutor:
 
         return local_dir
 
+    def _copy_to_container(self, container, source_path: Path, target_path: str):
+        """[Security] Inject code via docker cp (put_archive)"""
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode='w') as tar:
+            # Add all contents relative to the source_path (so they appear at target_path root)
+            tar.add(source_path, arcname=".")
+        stream.seek(0)
+        
+        # Ensure target directory exists
+        container.exec_run(f"mkdir -p {target_path}")
+        container.put_archive(target_path, stream)
+
+    def _copy_from_container(self, container, source_path: str, target_local_path: Path):
+        """
+        Retrieve output files via docker cp (get_archive)
+        [Optimization] Streams data to disk (temp file) to prevent OOM on large outputs
+        """
+        try:
+            stream, stat = container.get_archive(source_path)
+            temp_tar = target_local_path / "temp_output.tar"
+            
+            # Stream directly to disk to avoid loading massive files into RAM
+            with open(temp_tar, "wb") as f:
+                for chunk in stream:
+                    f.write(chunk)
+            
+            # Extract
+            with tarfile.open(temp_tar, mode='r') as tar:
+                tar.extractall(path=target_local_path)
+            
+            # Cleanup temp tar
+            temp_tar.unlink()
+            
+        except Exception as e:
+            logger.warning("Failed to copy from container", error=str(e))
+
+
     def run(self, task: TaskMessage) -> ExecutionResult:
         container = None
         host_work_dir = None
@@ -298,8 +337,9 @@ class TaskExecutor:
         try:
             # 1. Prepare workspace
             host_work_dir = self._prepare_workspace(task)
-            # Container internal path (use subpath as /workspace is bound)
-            container_work_dir = f"/workspace/{task.request_id}"
+            
+            # [SECURITY] Use isolated workspace path (No host bind)
+            container_work_dir = "/workspace"
 
             # 2. Acquire container (Warm Start)
             container = self._acquire_container(task.runtime)
@@ -307,7 +347,7 @@ class TaskExecutor:
             # Trigger pool replenishment immediately
             self._replenish_pool(task.runtime)
             
-            # Apply dynamic memory limit (Just before execution)
+            # Apply dynamic memory limit
             try:
                 container.update(mem_limit=f"{task.memory_mb}m", memswap_limit=f"{task.memory_mb}m")
             except Exception as e:
@@ -318,10 +358,8 @@ class TaskExecutor:
             host_output_dir = host_work_dir / "output"
             host_output_dir.mkdir(parents=True, exist_ok=True)
             
-            # Symlink /workspace/{req_id}/output -> /output inside container
-            # This allows user code to write to /output transparently
-            # Note: /output exists from Dockerfile, so we must remove it to create the symlink at /output
-            setup_cmd = f"rm -rf /output && ln -s {container_work_dir}/output /output"
+            # Setup container output dir
+            setup_cmd = f"rm -rf /output && mkdir -p /output"
 
             # Environment Variables
             env_vars = {
@@ -329,7 +367,7 @@ class TaskExecutor:
                 "FUNCTION_ID": task.function_id,
                 "MEMORY_MB": str(task.memory_mb),
                 "LLM_MODEL": task.model_id,
-                "OUTPUT_DIR": "/output" # Explicit output directory env var
+                "OUTPUT_DIR": "/output"
             }
             
             # Write payload to file if too large (>100KB)
@@ -339,22 +377,23 @@ class TaskExecutor:
                 with open(payload_path, "w") as f:
                     f.write(payload_str)
                 env_vars["PAYLOAD_FILE"] = f"{container_work_dir}/payload.json"
-                # Remove PAYLOAD env var to avoid Argument list too long
                 if "PAYLOAD" in env_vars: del env_vars["PAYLOAD"]
                 logger.info("Payload too large, using file instead", size=len(payload_str))
             else:
                 env_vars["PAYLOAD"] = payload_str
 
+            # [SECURITY] Inject Code + Payload into Container
+            logger.info("Injecting code to container", id=container.id[:12])
+            self._copy_to_container(container, host_work_dir, container_work_dir)
+
             cmd = []
             if task.runtime == "python": 
                 cmd = ["sh", "-c", f"{setup_cmd} && python {container_work_dir}/main.py"]
             elif task.runtime == "cpp":  
-                # C++: Compile then execute
                 cmd = ["sh", "-c", f"{setup_cmd} && g++ {container_work_dir}/main.cpp -o {container_work_dir}/out && {container_work_dir}/out"]
             elif task.runtime == "nodejs": 
                 cmd = ["sh", "-c", f"{setup_cmd} && node {container_work_dir}/index.js"]
             elif task.runtime == "go":
-                # Go: Build then execute
                 cmd = ["sh", "-c", f"{setup_cmd} && cd {container_work_dir} && go build -o main main.go && ./main"]
 
             # 4. 실행 (Exec) with Timeout
@@ -441,7 +480,10 @@ class TaskExecutor:
             self.cw.publish_peak_memory(task.function_id, task.runtime, usage)
             
             # 7. Output Upload
-            # Files written to /output in container are saved to host_output_dir
+            # Retrieve output files from container (Since no bind mount)
+            self._copy_from_container(container, "/output", host_output_dir)
+            
+            # Files written to /output in container are now in host_output_dir
             
             # Usage Metering Collection (Thread-safe JSONL)
             llm_token_count = 0
