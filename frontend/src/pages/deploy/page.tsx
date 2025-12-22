@@ -222,6 +222,9 @@ func main() {
       formDataToSend.append('functionId', formData.name);
       formDataToSend.append('runtime', formData.runtime);
       formDataToSend.append('memoryMb', formData.memory.toString());
+      // TODO: Implement Environment Variables transmission
+      // formData.envVars needs to be sent as JSON or individual fields
+      // formDataToSend.append('envVars', JSON.stringify(formData.envVars));
 
       // Use configured API URL or Fallback
 
