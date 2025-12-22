@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 
 interface SidebarProps {
   onSystemStatusClick: () => void;
@@ -6,6 +7,7 @@ interface SidebarProps {
 
 export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
   const location = useLocation();
+  const [systemStatus, setSystemStatus] = useState<any>(null);
 
   const menuItems = [
     { path: '/dashboard', icon: 'ri-dashboard-line', label: '대시보드' },
@@ -13,6 +15,28 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
     { path: '/logs', icon: 'ri-file-list-line', label: '실행 로그' },
     { path: '/settings', icon: 'ri-settings-3-line', label: '설정' },
   ];
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        // Fetch from Backend API (Controller -> Redis -> Worker)
+        // Uses fallback URL if VITE_API_BASE_URL is not set
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://16.184.11.69:8080'}/system/status`);
+        if (res.ok) {
+          const data = await res.json();
+          setSystemStatus(data);
+        }
+      } catch (e) {
+        // Keep previous status or show offline style on error
+        console.error("Failed to fetch system status");
+      }
+    };
+
+    // Initial fetch + Polling every 3 seconds
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <aside className="w-64 bg-white/60 backdrop-blur-md border-r border-gray-200 flex flex-col">
@@ -54,7 +78,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
               ⚡ System Status
             </span>
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <div className={`w-2 h-2 rounded-full ${systemStatus?.status === 'online' ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
           </div>
 
           {/* Python */}
@@ -64,7 +88,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
               {[...Array(5)].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-2 h-2 rounded-full ${i < 3
+                  className={`w-2 h-2 rounded-full ${i < (systemStatus?.pools?.python || 0)
                     ? 'bg-gradient-to-br from-blue-400 to-purple-400 animate-pulse'
                     : 'bg-gray-300'
                     }`}
@@ -74,7 +98,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
                   }}
                 />
               ))}
-              <span className="text-xs text-gray-500 ml-1">(3)</span>
+              <span className="text-xs text-gray-500 ml-1">({systemStatus?.pools?.python || 0})</span>
             </div>
           </div>
 
@@ -85,7 +109,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
               {[...Array(5)].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-2 h-2 rounded-full ${i < 2
+                  className={`w-2 h-2 rounded-full ${i < (systemStatus?.pools?.nodejs || 0)
                     ? 'bg-gradient-to-br from-blue-400 to-purple-400 animate-pulse'
                     : 'bg-gray-300'
                     }`}
@@ -95,7 +119,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
                   }}
                 />
               ))}
-              <span className="text-xs text-gray-500 ml-1">(2)</span>
+              <span className="text-xs text-gray-500 ml-1">({systemStatus?.pools?.nodejs || 0})</span>
             </div>
           </div>
 
@@ -106,7 +130,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
               {[...Array(5)].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-2 h-2 rounded-full ${i < 1
+                  className={`w-2 h-2 rounded-full ${i < ((systemStatus?.pools?.cpp || 0) + (systemStatus?.pools?.go || 0))
                     ? 'bg-gradient-to-br from-blue-400 to-purple-400 animate-pulse'
                     : 'bg-gray-300'
                     }`}
@@ -116,7 +140,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
                   }}
                 />
               ))}
-              <span className="text-xs text-gray-500 ml-1">(1)</span>
+              <span className="text-xs text-gray-500 ml-1">({(systemStatus?.pools?.cpp || 0) + (systemStatus?.pools?.go || 0)})</span>
             </div>
           </div>
 
