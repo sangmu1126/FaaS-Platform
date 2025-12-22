@@ -294,6 +294,7 @@ app.post('/upload', authenticate, rateLimiter, validateUploadRequest, upload.sin
             Item: {
                 functionId: { S: functionId },
                 name: { S: req.functionName || req.file.originalname },
+                description: { S: req.body.description || "" },
                 s3Key: { S: req.file.key },
                 originalName: { S: req.file.originalname },
                 runtime: { S: req.validatedRuntime },
@@ -408,6 +409,7 @@ app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res)
         const items = response.Items.map(item => ({
             functionId: item.functionId.S,
             name: item.name ? item.name.S : "Unknown",
+            description: item.description ? item.description.S : "",
             runtime: item.runtime ? item.runtime.S : "python",
             memoryMb: item.memoryMb ? parseInt(item.memoryMb.N) : 128,
             invocations: item.invocations ? parseInt(item.invocations.N) : 0,
@@ -422,7 +424,13 @@ app.get(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (r
         const response = await db.send(new GetItemCommand({ TableName: process.env.TABLE_NAME, Key: { functionId: { S: req.params.id } } }));
         if (!response.Item) return res.status(404).json({ error: "Not Found" });
         const item = response.Item;
-        res.json({ id: item.functionId.S, name: item.name?.S, s3Key: item.s3Key?.S, uploadedAt: item.uploadedAt?.S });
+        res.json({
+            id: item.functionId.S,
+            name: item.name?.S,
+            description: item.description?.S || "",
+            s3Key: item.s3Key?.S,
+            uploadedAt: item.uploadedAt?.S
+        });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
