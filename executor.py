@@ -33,6 +33,7 @@ class TaskMessage:
 @dataclass
 class ExecutionResult:
     request_id: str
+    function_id: str
     success: bool
     exit_code: int
     stdout: str
@@ -49,6 +50,7 @@ class ExecutionResult:
     def to_dict(self):
         return {
             "requestId": self.request_id,
+            "functionId": self.function_id,
             "workerId": self.worker_id,
             "status": "SUCCESS" if self.success else "FAILED",
             "exitCode": self.exit_code,
@@ -61,6 +63,8 @@ class ExecutionResult:
             "outputFiles": self.output_files,
             "llm_token_count": self.llm_token_count
         }
+
+
 
 # --- Service Logic ---
 
@@ -460,6 +464,7 @@ class TaskExecutor:
 
             return ExecutionResult(
                 request_id=task.request_id,
+                function_id=task.function_id,
                 success=(exit_code == 0),
                 exit_code=exit_code,
                 stdout=output_str,
@@ -477,7 +482,7 @@ class TaskExecutor:
         except Exception as e:
             logger.error("Execution failed", error=str(e))
             return ExecutionResult(
-                request_id=task.request_id, success=False, exit_code=-1,
+                request_id=task.request_id, function_id=task.function_id, success=False, exit_code=-1,
                 stdout="", stderr=str(e), duration_ms=int((time.time() - start_time) * 1000),
                 worker_id=socket.gethostname()
             )
