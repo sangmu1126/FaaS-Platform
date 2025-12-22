@@ -262,6 +262,28 @@ app.get('/models', async (req, res) => {
     }
 });
 
+// 0.3 System Status (Warm Pool)
+// Reads real-time worker status from Redis (published by agent.py)
+app.get('/system/status', cors(), async (req, res) => {
+    try {
+        const raw = await redis.get("system:status");
+        if (!raw) {
+            // Fallback: Return empty/offline status if key doesn't exist (Worker down)
+            return res.json({
+                pools: { python: 0, nodejs: 0, cpp: 0, go: 0 },
+                active_jobs: 0,
+                status: "offline"
+            });
+        }
+        const status = JSON.parse(raw);
+        status.status = "online";
+        res.json(status);
+    } catch (error) {
+        logger.error("System Status Error", { error: error.message });
+        res.status(500).json({ error: "Failed to fetch status" });
+    }
+});
+
 // [Security] Validation Middleware (Headers) - Imported from reference
 const validateUploadRequest = (req, res, next) => {
     const ALLOWED_RUNTIMES = ["python", "cpp", "nodejs", "go"];
