@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://16.184.11.69:8080';
+import { CONFIG } from '../config';
+
+const API_BASE_URL = CONFIG.API_BASE_URL;
 
 interface ApiError {
   message: string;
