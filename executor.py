@@ -632,7 +632,7 @@ class TaskExecutor:
             exec_thread = threading.Thread(target=run_docker_exec)
             
             # ------------------------------------------------------------------
-            # 🛑 [DISABLED] Real-time monitoring thread (Latency bottleneck!)
+            # [DISABLED] Real-time monitoring thread (Latency bottleneck)
             # The join(timeout=1.0) was causing a 1s delay on t3.micro.
             # We rely on the fallback stats check below which is faster.
             # ------------------------------------------------------------------
@@ -685,14 +685,16 @@ class TaskExecutor:
             
             # Fallback if monitoring failed or zero (unlikely but safe)
             if usage == 0:
-                try:
-                    stats = container.stats(stream=False)
-                    usage = stats['memory_stats'].get('max_usage', 0)
-                    if usage == 0:
-                        usage = stats['memory_stats'].get('usage', 0)
-                except Exception as e:
-                    logger.warning("Failed to get fallback metrics", error=str(e))
-                    usage = 0
+                pass
+                # 🛑 [DISABLED] Even this single API call takes ~1s on t3.micro!
+                # try:
+                #     stats = container.stats(stream=False)
+                #     usage = stats['memory_stats'].get('max_usage', 0)
+                #     if usage == 0:
+                #         usage = stats['memory_stats'].get('usage', 0)
+                # except Exception as e:
+                #     logger.warning("Failed to get fallback metrics", error=str(e))
+                #     usage = 0
             
             # 6. Auto-Tuning & CloudWatch
             tip, savings = AutoTuner.analyze(usage, task.memory_mb)
