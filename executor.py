@@ -631,24 +631,27 @@ class TaskExecutor:
             import threading
             exec_thread = threading.Thread(target=run_docker_exec)
             
-            # Memory Monitoring
-            metrics = {"peak_memory": 0}
-            stop_monitoring = threading.Event()
+            # ------------------------------------------------------------------
+            # 🛑 [DISABLED] Real-time monitoring thread (Latency bottleneck!)
+            # The join(timeout=1.0) was causing a 1s delay on t3.micro.
+            # We rely on the fallback stats check below which is faster.
+            # ------------------------------------------------------------------
+            
+            # metrics = {"peak_memory": 0}
+            # stop_monitoring = threading.Event()
 
-            def monitor_memory():
-                while not stop_monitoring.is_set():
-                    try:
-                        stats = container.stats(stream=False)
-                        usage = stats['memory_stats'].get('usage', 0)
-                        # Optional: Subtract cache if needed
-                        # usage -= stats['memory_stats'].get('stats', {}).get('cache', 0)
-                        metrics["peak_memory"] = max(metrics["peak_memory"], usage)
-                    except Exception:
-                        pass
-                    time.sleep(0.1) # Poll every 100ms
+            # def monitor_memory():
+            #     while not stop_monitoring.is_set():
+            #         try:
+            #             stats = container.stats(stream=False)
+            #             usage = stats['memory_stats'].get('usage', 0)
+            #             metrics["peak_memory"] = max(metrics["peak_memory"], usage)
+            #         except Exception:
+            #             pass
+            #         time.sleep(0.1)
 
-            monitor_thread = threading.Thread(target=monitor_memory, daemon=True)
-            monitor_thread.start()
+            # monitor_thread = threading.Thread(target=monitor_memory, daemon=True)
+            # monitor_thread.start()
             
             exec_thread.start()
             
@@ -656,8 +659,8 @@ class TaskExecutor:
             exec_thread.join(timeout=task.timeout_ms / 1000.0)
             
             # Stop monitoring
-            stop_monitoring.set()
-            monitor_thread.join(timeout=1.0)
+            # stop_monitoring.set()
+            # monitor_thread.join(timeout=1.0)
             
             if exec_thread.is_alive():
                 logger.error("Execution Timed Out", timeout_ms=task.timeout_ms)
@@ -678,7 +681,7 @@ class TaskExecutor:
             
             # Actual memory measurement
             # Use monitored peak memory if available
-            usage = metrics["peak_memory"]
+            usage = 0 # metrics["peak_memory"] (Disabled)
             
             # Fallback if monitoring failed or zero (unlikely but safe)
             if usage == 0:
