@@ -524,8 +524,8 @@ class TaskExecutor:
             host_output_dir = host_work_dir / "output"
             host_output_dir.mkdir(parents=True, exist_ok=True)
             
-            # Setup container output dir
-            setup_cmd = f"rm -rf /output && mkdir -p /output"
+            # Setup container output dir + Lazy Cleanup (/tmp from previous runs)
+            setup_cmd = f"rm -rf /output /tmp/* && mkdir -p /output"
 
             # Environment Variables
             env_vars = {
