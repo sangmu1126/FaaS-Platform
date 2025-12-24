@@ -503,21 +503,27 @@ class TaskExecutor:
             )
         
         try:
-            # 1. Prepare workspace
-            host_work_dir = self._prepare_workspace(task)
-            
-            # [SECURITY] Use isolated workspace path (No host bind)
-            container_work_dir = "/workspace"
-
-            # 2. Acquire container (Warm Start - checks function pool first)
-            # Note: replenish is now called inside _acquire_container only for cold starts
+            # 1. [Reorder] Acquire container FIRST to check warm status
             container = self._acquire_container(task.runtime, task.function_id)
+            is_warm = getattr(container, "is_warm", False)
             
             # Apply dynamic memory limit
             try:
                 container.update(mem_limit=f"{task.memory_mb}m", memswap_limit=f"{task.memory_mb}m")
             except Exception as e:
                 logger.warning("Failed to update container memory limit", error=str(e))
+            
+            # [SECURITY] Use isolated workspace path (No host bind)
+            container_work_dir = "/workspace"
+            
+            # 2. [Optimization] Skip workspace prep for Warm Start (code already in container)
+            if is_warm:
+                logger.info("⚡ Warm Start: Skipping Host Workspace Prep", id=container.id[:12])
+                host_work_dir = Path(self.cfg["DOCKER_WORK_DIR_ROOT"]) / task.request_id
+                host_work_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                # Cold Start: Download code and prepare workspace
+                host_work_dir = self._prepare_workspace(task)
             
             # 3. Configure execution command
             # Output Directory Setup
@@ -550,7 +556,6 @@ class TaskExecutor:
 
             # [SECURITY] Inject Code + Payload into Container
             # Optimization: Skip injection if Warm Start AND Payload is small (in env vars)
-            is_warm = getattr(container, "is_warm", False)
             has_large_payload = "PAYLOAD_FILE" in env_vars
             
             if not is_warm or has_large_payload:
