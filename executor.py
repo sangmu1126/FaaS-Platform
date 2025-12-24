@@ -260,14 +260,17 @@ class TaskExecutor:
                 if function_id in self.function_pools and self.function_pools[function_id]:
                     container = self.function_pools[function_id].pop()  # LRU: get most recent
                     try:
-                        # Unpause if needed (handle legacy paused containers)
-                        if container.status == 'paused':
+                        # Try unpause (ignore if already running)
+                        try:
                             container.unpause()
+                        except Exception:
+                            pass  # Already running, that's fine
                         logger.info("⚡ Warm Start from function pool", function_id=function_id)
                         container.is_warm = True  # Mark as warm
                         return container
-                    except Exception:
-                        pass  # Container dead, fall through to generic pool
+                    except Exception as e:
+                        logger.warning("⚠️ Failed to reuse container from function pool", error=str(e))
+                        # Container dead, fall through to generic pool
         
         # Fall back to runtime generic pool (Cold Start for this function)
         cid = None
@@ -285,9 +288,11 @@ class TaskExecutor:
 
         try:
             c = self.docker.containers.get(cid)
-            # Unpause if needed (handle legacy paused containers)
-            if c.status == 'paused':
+            # Try unpause (ignore if already running)
+            try:
                 c.unpause()
+            except Exception:
+                pass  # Already running, that's fine
             logger.info("🥶 Cold Start from runtime pool", runtime=target_runtime)
             
             # Only replenish when generic pool is used (not for warm start)
