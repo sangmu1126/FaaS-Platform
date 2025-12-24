@@ -86,9 +86,10 @@ class ContainerManager:
             with self.function_pool_lock:
                 if function_id in self.function_pools and self.function_pools[function_id]:
                     container = self.function_pools[function_id].pop()
-                    try:
-                        container.unpause()
-                    except Exception: pass
+                    # Warm Pool items are recycling/running, no need to unpause
+                    # try:
+                    #     container.unpause()
+                    # except Exception: pass
                     logger.info("⚡ Warm Start from function pool", function_id=function_id)
                     container.is_warm = True
                     return container
