@@ -1,14 +1,12 @@
 import { request } from 'undici';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
-import { FormData } from 'undici'; // Undici has built-in FormData in Node 18+ or via import
-// Note: Node 18 has global FormData. If undici export is not standard, we use generic FormData construction.
-// Actually undici request supports FormData.
+import FormData from 'form-data';
 
 export const proxyService = {
 
     // Smart Upload with Runtime Optimization
-    async uploadFunction(file, runtime, functionId, memoryMb) {
+    async uploadFunction(file, runtime, functionId, memoryMb, functionName) {
         const targetUrl = `${config.awsAlbUrl}/upload`;
 
         // 1. Runtime Optimization Logic
@@ -17,42 +15,43 @@ export const proxyService = {
 
         if (runtime === 'python') {
             contentType = config.runtimes.python.contentType;
-            // Force UTF-8 text if it's python script, but usually we upload ZIPs for FaaS. 
-            // User Requirement: "Python -> UTF-8 + text/x-python". 
-            // Assuming user creates single-file functions or we are enforcing this metadata.
-            // If file is zip, we might just pass it. But let's follow spec.
         } else if (runtime === 'cpp') {
             contentType = config.runtimes.cpp.contentType;
         }
 
-        // 2. Construct FormData
-        const formData = new global.FormData();
+        // 2. Construct FormData (using form-data package)
+        const formData = new FormData();
+        formData.append('file', file.buffer, { filename, contentType });
 
-        // We need to append the Buffer. 
-        // In Node global FormData, we can pass a Blob.
-        const blob = new global.Blob([file.buffer], { type: contentType });
-        formData.append('file', blob, filename);
+        // 3. Get FormData as Buffer (synchronous, avoids stream issues)
+        const formDataBuffer = formData.getBuffer();
 
         // Headers for ALB Controller
         const headers = {
             'x-runtime': runtime,
             'x-memory-mb': memoryMb ? memoryMb.toString() : '128',
-            'x-api-key': 'test-api-key' // Should be from config
+            'x-api-key': config.infraApiKey,
+            ...formData.getHeaders(),
+            'Content-Length': formDataBuffer.length
         };
 
-        // 3. Send
-        logger.info(`Proxying Upload to ${targetUrl}`, { runtime, contentType });
+        // Forward function name if provided
+        if (functionName) {
+            headers['x-function-name'] = encodeURIComponent(functionName);
+        }
+
+        // 4. Send using undici.request with Buffer body
+        logger.info(`Proxying Upload to ${targetUrl}`, { runtime, contentType, size: formDataBuffer.length });
 
         const { statusCode, body } = await request(targetUrl, {
             method: 'POST',
-            headers, // FormData headers are auto-set by undici/fetch usually? 
-            // Wait, undici 'request' with body as FormData works but we need to match spec.
-            // Safer to let undici handle multipart boundary if we pass body as FormData.
-            body: formData
+            headers,
+            body: formDataBuffer
         });
 
         if (statusCode >= 400) {
-            throw new Error(`ALB returned ${statusCode}: ${await body.text()}`);
+            const text = await body.text();
+            throw new Error(`ALB returned ${statusCode}: ${text}`);
         }
 
         return await body.json();
@@ -62,36 +61,116 @@ export const proxyService = {
     async runFunction(functionId, inputData) {
         const targetUrl = `${config.awsAlbUrl}/run`;
 
-        const { statusCode, body } = await request(targetUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': 'test-api-key'
-            },
-            body: JSON.stringify({ functionId, inputData })
-        });
+        logger.info(`Proxying RUN to ${targetUrl}`, { functionId });
 
-        const result = await body.json();
+        try {
+            const { statusCode, body } = await request(targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': config.infraApiKey
+                },
+                body: JSON.stringify({ functionId, inputData }),
+                bodyTimeout: 60000,  // 60 seconds for function execution
+                headersTimeout: 30000  // 30 seconds to get initial response
+            });
 
-        // If ALB is down or 500, we treat result as error
-        if (statusCode >= 400) {
-            result.error = result.error || "Upstream Error";
-            result.status = "ERROR";
+            const result = await body.json();
+
+            // If ALB is down or 500, we treat result as error
+            if (statusCode >= 400) {
+                result.error = result.error || "Upstream Error";
+                result.status = "ERROR";
+            }
+
+            return result;
+        } catch (error) {
+            logger.error('Run Function Proxy Error', error);
+            return {
+                error: error.message || 'Connection to AWS failed',
+                status: 'ERROR'
+            };
         }
-
-        return result;
     },
 
     // Generic Proxy (GET)
     async fetch(path) {
         const targetUrl = `${config.awsAlbUrl}${path}`;
         const { body } = await request(targetUrl, {
-            headers: { 'x-api-key': 'test-api-key' }
+            headers: { 'x-api-key': config.infraApiKey }
         });
         try {
             return await body.json();
         } catch (e) {
             return { error: "Failed to parse JSON from upstream" };
+        }
+    },
+
+    // DELETE Function
+    async deleteFunction(functionId) {
+        const targetUrl = `${config.awsAlbUrl}/functions/${functionId}`;
+        logger.info(`Proxying DELETE to ${targetUrl}`);
+
+        const { statusCode, body } = await request(targetUrl, {
+            method: 'DELETE',
+            headers: { 'x-api-key': config.infraApiKey }
+        });
+
+        if (statusCode >= 400) {
+            const text = await body.text();
+            throw new Error(`ALB returned ${statusCode}: ${text}`);
+        }
+
+        try {
+            return await body.json();
+        } catch (e) {
+            return { success: true, message: 'Function deleted' };
+        }
+    },
+
+    // UPDATE Function (PUT)
+    async updateFunction(functionId, updateData) {
+        const targetUrl = `${config.awsAlbUrl}/functions/${functionId}`;
+        logger.info(`Proxying PUT to ${targetUrl}`, updateData);
+
+        const { statusCode, body } = await request(targetUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': config.infraApiKey
+            },
+            body: JSON.stringify(updateData)
+        });
+
+        if (statusCode >= 400) {
+            const text = await body.text();
+            throw new Error(`ALB returned ${statusCode}: ${text}`);
+        }
+
+        return await body.json();
+    },
+
+    // GET Metrics for a function
+    async getMetrics(functionId) {
+        const targetUrl = `${config.awsAlbUrl}/functions/${functionId}/metrics`;
+        const { statusCode, body } = await request(targetUrl, {
+            headers: { 'x-api-key': config.infraApiKey }
+        });
+
+        // If not supported by AWS Controller, return empty metrics
+        if (statusCode === 404) {
+            return {
+                executions: 0,
+                avgResponseTime: 0,
+                coldStarts: 0,
+                errors: 0
+            };
+        }
+
+        try {
+            return await body.json();
+        } catch (e) {
+            return { error: "Failed to parse metrics" };
         }
     }
 };
