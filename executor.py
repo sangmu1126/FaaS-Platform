@@ -1,4 +1,5 @@
 import os
+import atexit
 import shutil
 import time
 import threading
@@ -131,6 +132,9 @@ class CloudWatchPublisher:
 class TaskExecutor:
     """Integrated Execution Engine: S3 Download -> Docker Run -> Result Processing"""
     
+    # [LRU] Maximum containers per function for warm pool
+    MAX_POOL_SIZE_PER_FUNC = 5
+    
     def __init__(self, config: Dict):
         self.cfg = config
         
@@ -146,7 +150,7 @@ class TaskExecutor:
             region=config.get("AWS_REGION", "ap-northeast-2")
         )
         
-        # Warm Pool Storage
+        # Runtime-based Warm Pool Storage (for cold start elimination)
         self.pools = {
             "python": deque(), "cpp": deque(), "nodejs": deque(), "go": deque()
         }
@@ -157,12 +161,56 @@ class TaskExecutor:
             "go": config.get("DOCKER_GO_IMAGE", "golang:1.19-alpine")
         }
         
+        # Function-specific Warm Pool (for secure reuse with LRU eviction)
+        # Key: function_id, Value: list of container objects (ordered by usage, newest last)
+        self.function_pools = {}
+        self.function_pool_lock = threading.Lock()
+        
         # Runtime-specific locks
         self.pool_locks = {
             k: threading.Lock() for k in ["python", "cpp", "nodejs", "go"]
         }
         
         self._initialize_warm_pool()
+        
+        # Dynamic global concurrency limiter (based on host RAM)
+        self.global_limit = self._init_global_semaphore()
+        
+        # Register cleanup on program exit
+        atexit.register(self._shutdown_cleanup)
+
+    def _init_global_semaphore(self):
+        """
+        Calculate safe concurrency limit based on Host RAM.
+        Formula: (Total RAM - System Reserved) / Min Function Size
+        """
+        try:
+            # Get Total Memory (Linux/Unix)
+            total_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+            total_mb = total_bytes / (1024 * 1024)
+        except Exception as e:
+            logger.warning("Failed to detect RAM, using default", error=str(e))
+            total_mb = 2048  # Fallback to 2GB
+
+        # System Reserved (OS + Docker + Agent)
+        if total_mb < 4096:
+            reserved_mb = total_mb * 0.4
+        else:
+            reserved_mb = 1536  # 1.5GB fixed for larger instances
+
+        # Calculate Available Slots (min 128MB per function)
+        available_mb = total_mb - reserved_mb
+        limit = int(available_mb // 128)
+        
+        # Safety bound (Min 1, Max 500)
+        limit = max(1, min(limit, 500))
+
+        logger.info("Dynamic Limit Configured", 
+                    host_ram_mb=int(total_mb), 
+                    reserved_mb=int(reserved_mb), 
+                    concurrency_limit=limit)
+        
+        return threading.Semaphore(limit)
 
     def _initialize_warm_pool(self):
         """Initialize Warm Pool (Eliminate Cold Start)"""
@@ -198,21 +246,35 @@ class TaskExecutor:
             logger.error("Failed to create warm container", runtime=runtime, error=str(e))
             return None
 
-    def _acquire_container(self, runtime: str):
-        """Acquire container from Warm Pool (Unpause)"""
+    def _acquire_container(self, runtime: str, function_id: str = None):
+        """
+        Acquire container with priority:
+        1. Function-specific warm pool (same function = secure + fast)
+        2. Runtime-based generic pool (different function = cold start for that func)
+        """
         target_runtime = runtime if runtime in self.pools else "python"
         
-        # Create immediately if pool is empty (Synchronous)
-        # Use lock to ensure atomic check-and-act
+        # Try function-specific pool first (Warm Start for repeated calls)
+        if function_id:
+            with self.function_pool_lock:
+                if function_id in self.function_pools and self.function_pools[function_id]:
+                    container = self.function_pools[function_id].pop()  # LRU: get most recent
+                    try:
+                        if container.status == 'paused':
+                            container.unpause()
+                        logger.info("⚡ Warm Start from function pool", function_id=function_id)
+                        return container
+                    except Exception:
+                        pass  # Container dead, fall through to generic pool
+        
+        # Fall back to runtime generic pool (Cold Start for this function)
         cid = None
         with self.pool_locks[target_runtime]:
             if not self.pools[target_runtime]:
                 logger.warning("Pool empty, creating new container synchronously", runtime=target_runtime)
-                # Create container INSIDE lock to prevent multiple threads creating simultaneously for same depletion
                 cid = self._create_warm_container(target_runtime)
                 if not cid: raise RuntimeError("Failed to create container")
             
-            # Now pop (guaranteed to have one unless creation failed)
             if self.pools[target_runtime]:
                 cid = self.pools[target_runtime].popleft()
             
@@ -223,13 +285,58 @@ class TaskExecutor:
             c = self.docker.containers.get(cid)
             if c.status == 'paused':
                 c.unpause()
+            logger.info("🥶 Cold Start from runtime pool", runtime=target_runtime)
+            
+            # Only replenish when generic pool is used (not for warm start)
+            self._replenish_pool(target_runtime)
+            
             return c
         except Exception:
-            # Retry recursively on failure (e.g., dead container)
-            return self._acquire_container(target_runtime)
+            return self._acquire_container(target_runtime, function_id)
+
+    def _release_container(self, container, function_id: str, runtime: str):
+        """
+        Return container to function-specific pool with LRU eviction.
+        [Security] Cleans workspace before reuse.
+        """
+        try:
+            # 1. Clean up workspace and temp files (Security: remove previous code)
+            container.exec_run("rm -rf /workspace/* /tmp/* /output/*", demux=False)
+            
+            # 2. Pause container for reuse
+            if container.status != 'paused':
+                container.pause()
+            
+            # 3. Add to function-specific pool with LRU eviction
+            with self.function_pool_lock:
+                if function_id not in self.function_pools:
+                    self.function_pools[function_id] = []
+                
+                pool = self.function_pools[function_id]
+                
+                # [LRU] If pool is full, evict the oldest (front of list)
+                if len(pool) >= self.MAX_POOL_SIZE_PER_FUNC:
+                    oldest = pool.pop(0)
+                    try:
+                        oldest.remove(force=True)
+                        logger.info("🗑️ LRU Eviction: removed oldest container", function_id=function_id)
+                    except:
+                        pass
+                
+                # Add new container at the end (most recently used)
+                pool.append(container)
+                logger.info("♻️ Container recycled", function_id=function_id, pool_size=len(pool))
+                
+        except Exception as e:
+            # If cleanup fails, just remove the container
+            logger.warning("Failed to recycle container, removing", error=str(e))
+            try:
+                container.remove(force=True)
+            except:
+                pass
 
     def _replenish_pool(self, runtime: str):
-        """Replenish the warm pool asynchronously after usage"""
+        """Replenish the runtime warm pool asynchronously after usage"""
         def _create():
             try:
                 self._create_warm_container(runtime)
@@ -239,6 +346,7 @@ class TaskExecutor:
         
         # Run in a separate thread to avoid blocking the main execution flow
         threading.Thread(target=_create, daemon=True).start()
+
 
     def _prepare_workspace(self, task: TaskMessage) -> Path:
         """S3 Download and [Security] Zip Slip prevention during extraction"""
@@ -334,6 +442,17 @@ class TaskExecutor:
         host_work_dir = None
         start_time = time.time()
         
+        # Acquire global slot (wait up to 30s, then reject)
+        acquired = self.global_limit.acquire(blocking=True, timeout=30)
+        if not acquired:
+            logger.error("Global container limit reached", request_id=task.request_id)
+            return ExecutionResult(
+                request_id=task.request_id, function_id=task.function_id, success=False, exit_code=-1,
+                stdout="", stderr="Server Busy (503): Too many concurrent executions",
+                duration_ms=int((time.time() - start_time) * 1000),
+                worker_id=socket.gethostname()
+            )
+        
         try:
             # 1. Prepare workspace
             host_work_dir = self._prepare_workspace(task)
@@ -341,11 +460,9 @@ class TaskExecutor:
             # [SECURITY] Use isolated workspace path (No host bind)
             container_work_dir = "/workspace"
 
-            # 2. Acquire container (Warm Start)
-            container = self._acquire_container(task.runtime)
-            
-            # Trigger pool replenishment immediately
-            self._replenish_pool(task.runtime)
+            # 2. Acquire container (Warm Start - checks function pool first)
+            # Note: replenish is now called inside _acquire_container only for cold starts
+            container = self._acquire_container(task.runtime, task.function_id)
             
             # Apply dynamic memory limit
             try:
@@ -530,13 +647,37 @@ class TaskExecutor:
             )
             
         finally:
-            # Discard polluted container (do not reuse)
+            # Release global slot first
+            self.global_limit.release()
+            
+            # [LRU] Recycle container to function-specific pool (not delete)
             if container:
-                try:
-                    container.remove(force=True)
-                except: pass
+                self._release_container(container, task.function_id, task.runtime)
             
             # Clean up files
             if host_work_dir and host_work_dir.exists():
                 try: shutil.rmtree(host_work_dir)
                 except: pass
+
+    def _shutdown_cleanup(self):
+        """Clean up all containers on program exit (zombie prevention)"""
+        logger.info("Graceful Shutdown: Cleaning up all containers...")
+        
+        # Clean Runtime Pool (Generic)
+        for runtime, pool in self.pools.items():
+            while pool:
+                try:
+                    cid = pool.pop()
+                    self.docker.containers.get(cid).remove(force=True)
+                except:
+                    pass
+        
+        # Clean Function Pool (Warm)
+        for fid, containers in self.function_pools.items():
+            for c in containers:
+                try:
+                    c.remove(force=True)
+                except:
+                    pass
+        
+        logger.info("Graceful Shutdown: Complete")
