@@ -10,6 +10,7 @@ import json
 import structlog
 import boto3
 import docker
+import redis
 import socket
 from pathlib import Path
 from collections import deque
@@ -175,6 +176,17 @@ class TaskExecutor:
         
         # Dynamic global concurrency limiter (based on host RAM)
         self.global_limit = self._init_global_semaphore()
+        
+        # Redis cache for code (reduces S3 latency from 1000ms to 5ms)
+        redis_host = config.get("REDIS_HOST", "localhost")
+        redis_port = int(config.get("REDIS_PORT", 6379))
+        try:
+            self.redis = redis.Redis(host=redis_host, port=redis_port, decode_responses=False)
+            self.redis.ping()
+            logger.info("📦 Redis connected for code caching", host=redis_host)
+        except Exception as e:
+            logger.warning("⚠️ Redis unavailable, falling back to S3 only", error=str(e))
+            self.redis = None
         
         # Register cleanup on program exit
         atexit.register(self._shutdown_cleanup)
@@ -359,14 +371,41 @@ class TaskExecutor:
 
 
     def _prepare_workspace(self, task: TaskMessage) -> Path:
-        """S3 Download and [Security] Zip Slip prevention during extraction"""
+        """S3 Download with Redis cache and [Security] Zip Slip prevention during extraction"""
         local_dir = Path(self.cfg["DOCKER_WORK_DIR_ROOT"]) / task.request_id
         if local_dir.exists(): shutil.rmtree(local_dir)
         local_dir.mkdir(parents=True, exist_ok=True)
         
         zip_path = local_dir / "code.zip"
         bucket = task.s3_bucket if task.s3_bucket else self.cfg["S3_CODE_BUCKET"]
-        self.s3.download_file(bucket, task.s3_key, str(zip_path))
+        cache_key = f"code:{task.function_id}"
+        
+        # 1. Try Redis cache first (5ms vs 1000ms from S3)
+        cache_hit = False
+        if self.redis:
+            try:
+                cached_code = self.redis.get(cache_key)
+                if cached_code:
+                    with open(zip_path, "wb") as f:
+                        f.write(cached_code)
+                    cache_hit = True
+                    logger.info("⚡ Code cache HIT", function_id=task.function_id)
+            except Exception as e:
+                logger.warning("Redis cache read failed", error=str(e))
+        
+        # 2. Cache MISS -> Download from S3
+        if not cache_hit:
+            logger.info("📥 Code cache MISS, downloading from S3", function_id=task.function_id)
+            self.s3.download_file(bucket, task.s3_key, str(zip_path))
+            
+            # 3. Store in Redis for future requests (TTL: 10 minutes)
+            if self.redis:
+                try:
+                    with open(zip_path, "rb") as f:
+                        self.redis.setex(cache_key, 600, f.read())  # 10분 TTL
+                    logger.info("📦 Code cached to Redis", function_id=task.function_id)
+                except Exception as e:
+                    logger.warning("Redis cache write failed", error=str(e))
         
         # Zip Slip prevention code
         with zipfile.ZipFile(zip_path, "r") as zf:
