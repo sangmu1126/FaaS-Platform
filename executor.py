@@ -685,16 +685,22 @@ class TaskExecutor:
             
             # Fallback if monitoring failed or zero (unlikely but safe)
             if usage == 0:
-                pass
-                # 🛑 [DISABLED] Even this single API call takes ~1s on t3.micro!
-                # try:
-                #     stats = container.stats(stream=False)
-                #     usage = stats['memory_stats'].get('max_usage', 0)
-                #     if usage == 0:
-                #         usage = stats['memory_stats'].get('usage', 0)
-                # except Exception as e:
-                #     logger.warning("Failed to get fallback metrics", error=str(e))
-                #     usage = 0
+                # [OPTIMIZATION] Direct Cgroup Read (0ms Overhead vs 1000ms via Docker API)
+                # Instead of asking Docker Daemon, we peek at the kernel's ledger directly.
+                try:
+                    # Amazon Linux 2023 / Cgroup V2 Path
+                    # Path: /sys/fs/cgroup/system.slice/docker-{id}.scope/memory.peak
+                    max_usage_file = f"/sys/fs/cgroup/system.slice/docker-{container.id}.scope/memory.peak"
+                    if os.path.exists(max_usage_file):
+                        with open(max_usage_file, "r") as f:
+                            usage = int(f.read().strip())
+                    else:
+                        # Fallback for some systems (older Cgroup V1 or different drivers)
+                        # But on our AL2023 Setup, the above is correct.
+                        pass
+                except Exception as e:
+                    logger.warning("Failed to read cgroup memory", error=str(e))
+                    usage = 0
             
             # 6. Auto-Tuning & CloudWatch
             tip, savings = AutoTuner.analyze(usage, task.memory_mb)
