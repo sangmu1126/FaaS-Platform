@@ -70,7 +70,8 @@ class TaskExecutor:
             is_warm = getattr(container, "is_warm", False)
             
             # 2. Resource Limits
-            self.containers.update_resources(container, task.memory_mb)
+            # 2. Resource Limits (Disable for performance - Legacy behavior)
+            # self.containers.update_resources(container, task.memory_mb)
             
             # 3. Workspace Preparation
             if is_warm:
