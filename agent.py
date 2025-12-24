@@ -10,7 +10,8 @@ import structlog
 from dotenv import load_dotenv
 from prometheus_client import start_http_server, Counter, Histogram, Gauge
 
-from executor import TaskExecutor, TaskMessage
+from executor import TaskExecutor
+from models import TaskMessage
 
 # --- Setup ---
 load_dotenv()
@@ -173,10 +174,10 @@ class InfraAgent:
                     "timestamp": time.time(),
                     "worker_id": self.config.get("HOSTNAME", "unknown"),
                     "pools": {
-                        "python": len(self.executor.pools["python"]),
-                        "nodejs": len(self.executor.pools["nodejs"]),
-                        "cpp": len(self.executor.pools["cpp"]),
-                        "go": len(self.executor.pools["go"])
+                        "python": len(self.executor.containers.pools["python"]),
+                        "nodejs": len(self.executor.containers.pools["nodejs"]),
+                        "cpp": len(self.executor.containers.pools["cpp"]),
+                        "go": len(self.executor.containers.pools["go"])
                     },
                     "active_jobs": self.active_jobs._value.get()
                 }
