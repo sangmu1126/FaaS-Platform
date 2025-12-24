@@ -21,7 +21,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
       try {
         // Fetch from Backend API (Controller -> Redis -> Worker)
         // Uses fallback URL if VITE_API_BASE_URL is not set
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://16.184.11.69:8080'}/system/status`);
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`);
         if (res.ok) {
           const data = await res.json();
           setSystemStatus(data);
