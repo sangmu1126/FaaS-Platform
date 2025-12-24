@@ -38,6 +38,9 @@ export const gatewayController = {
                     name: awsFn.name || "Unknown (Offline)",
                     runtime: awsFn.runtime || "unknown",
                     status: awsFn.status || local.status,
+                    createdAt: awsFn.createdAt || awsFn.uploadedAt || null,
+                    uploadedAt: awsFn.uploadedAt || null,
+                    memoryMb: awsFn.memoryMb || 128,
                     local_stats: local
                 };
             });
@@ -54,12 +57,26 @@ export const gatewayController = {
         try {
             if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-            const runtime = req.body.runtime || req.headers['x-runtime'] || 'python';
-            const memoryMb = req.body.memoryMb || req.headers['x-memory-mb'] || '128';
+            // Robust Runtime Sanitization
+            let rawRuntime = req.headers['x-runtime'] || req.body.runtime || 'python';
+
+            // Map specific versions to generic family (ALB requirement)
+            const runtimeMap = {
+                'python3.11': 'python',
+                'nodejs20.x': 'nodejs',
+                'cpp17': 'cpp',
+                'go1.21': 'go'
+            };
+            const runtime = runtimeMap[rawRuntime] || rawRuntime;
+
+            const memoryMb = req.headers['x-memory-mb'] || req.body.memoryMb || '128';
             const functionId = req.body.functionId; // Optional update
+            const functionName = req.headers['x-function-name']
+                ? decodeURIComponent(req.headers['x-function-name'])
+                : req.body.name || null;
 
             // 1. Proxy Upload with Optimization
-            const result = await proxyService.uploadFunction(req.file, runtime, functionId, memoryMb);
+            const result = await proxyService.uploadFunction(req.file, runtime, functionId, memoryMb, functionName);
 
             // 2. Notify Slack
             slackService.notifyDeploy(result.functionId, runtime, req.file.originalname);
@@ -128,26 +145,61 @@ export const gatewayController = {
     // DELETE /functions/:id
     async deleteFunction(req, res) {
         try {
-            const result = await proxyService.fetch(`/functions/${req.params.id}`); // This is likely GET, we need DELETE.
-            // proxyService.fetch is generic GET. We need generic request. 
-            // Re-implementing specific DELETE logic here or adding to proxyService.
-            // Let's use generic approach inline since proxyService needs update or we use simple fetch.
-
-            // Actually, let's fix this by calling a delete method we should have added or just raw request.
-            // I will implement a delete helper in proxy logic in next step or just do it here.
-            // For now, let's assume proxyService has a 'request' method I can expose?
-            // I'll stick to 'fetch' for GET. I'll add 'delete' logic inside controller using undici directly or add to proxyService.
-            // To keep it clean, I will assume proxyService needs a 'deleteFunction' method.
-            // But I didn't add it. I'll modify the controller to just use undici request for DELETE.
-
-            const targetUrl = `${config.awsAlbUrl}/functions/${req.params.id}`;
-            // We need to import request for this one-off or update service.
-            // I'll update service. Actually I can't update service easily without another tool call.
-            // I'll just use undici here.
-        } catch (e) {
-            // ... 
+            const result = await proxyService.deleteFunction(req.params.id);
+            res.json(result);
+        } catch (error) {
+            logger.error('Delete Function Error', error);
+            res.status(500).json({ error: error.message });
         }
-        // For now, I will omit DELETE implementation in this specific file write or keep it basic.
-        res.status(501).json({ error: "Not Implemented Yet" });
+    },
+
+    // PUT /functions/:id
+    async updateFunction(req, res) {
+        try {
+            const result = await proxyService.updateFunction(req.params.id, req.body);
+            res.json(result);
+        } catch (error) {
+            logger.error('Update Function Error', error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
+    // GET /functions/:id/metrics
+    async getMetrics(req, res) {
+        try {
+            const metrics = await proxyService.getMetrics(req.params.id);
+            res.json(metrics);
+        } catch (error) {
+            logger.error('Get Metrics Error', error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
+    // GET /dashboard/stats
+    async getDashboardStats(req, res) {
+        try {
+            // Aggregate stats from functions and telemetry
+            const functions = await proxyService.fetch('/functions');
+            const localStats = await telemetryService.getAll();
+
+            const stats = {
+                totalFunctions: Array.isArray(functions) ? functions.length : 0,
+                activeFunctions: Array.isArray(functions)
+                    ? functions.filter(f => f.status === 'READY' || f.status === 'active').length
+                    : 0,
+                totalExecutions: Object.values(localStats).reduce((sum, s) => sum + (s.calls || 0), 0),
+                totalErrors: Object.values(localStats).reduce((sum, s) => sum + (s.errors || 0), 0),
+                successRate: 0
+            };
+
+            if (stats.totalExecutions > 0) {
+                stats.successRate = ((stats.totalExecutions - stats.totalErrors) / stats.totalExecutions * 100).toFixed(2);
+            }
+
+            res.json(stats);
+        } catch (error) {
+            logger.error('Get Dashboard Stats Error', error);
+            res.status(500).json({ error: error.message });
+        }
     }
 };
