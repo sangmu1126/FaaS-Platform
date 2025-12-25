@@ -29,7 +29,7 @@ class InfraAgent:
     def __init__(self):
         logger.info("🤖 Infra Worker Agent Starting...")
         
-        # 환경 변수 로드
+        # Load environment variables
         self.config = {k: v for k, v in os.environ.items()}
         
         # Clients
@@ -40,7 +40,7 @@ class InfraAgent:
             decode_responses=True
         )
         
-        # 실행 엔진 (Warm Pool 포함)
+        # Execution engine (includes Warm Pool)
         self.executor = TaskExecutor(self.config)
         self.running = True
 
@@ -111,7 +111,7 @@ class InfraAgent:
             
             logger.info("🚀 Processing Task", id=task.request_id, runtime=task.runtime)
 
-            # 2. 작업 실행 (Warm Pool 사용)
+            # 2. Execute task (using Warm Pool)
             result = None
             max_attempts = 3
             for attempt in range(max_attempts):
@@ -124,17 +124,17 @@ class InfraAgent:
                         raise e
                     time.sleep(1)
 
-            # 3. 결과 Redis 발행 (Pub/Sub + KV 저장)
+            # 3. Publish result to Redis (Pub/Sub + KV storage)
             result_dict = result.to_dict()
             json_result = json.dumps(result_dict)
             
-            # Pub/Sub 채널
+            # Pub/Sub channel
             channel = f"result:{task.request_id}"
             for attempt in range(max_attempts):
                 try:
                     self.redis_client.publish(channel, json_result)
                     
-                    # Async 조회용 키 저장 (TTL 1시간)
+                    # Store key for async retrieval (TTL 1 hour)
                     self.redis_client.setex(f"job:{task.request_id}", 3600, json_result)
                     break
                 except Exception as e:
@@ -143,7 +143,7 @@ class InfraAgent:
                         raise e
                     time.sleep(1)
 
-            # 4. SQS 메시지 삭제 (Successful processing)
+            # 4. Delete SQS message (Successful processing)
             self.sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=msg["ReceiptHandle"])
             
             logger.info("✅ Task Completed", id=task.request_id, ms=result.duration_ms)

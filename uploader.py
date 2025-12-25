@@ -14,7 +14,7 @@ class OutputUploader:
 
     def upload_outputs(self, job_id: str, source_dir: str) -> List[str]:
         """
-        source_dir 폴더의 모든 파일을 S3에 업로드하고 URL 리스트를 반환합니다.
+        Uploads all files from source_dir to S3 and returns list of URLs.
         """
         uploaded_urls = []
         

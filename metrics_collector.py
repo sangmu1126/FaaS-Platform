@@ -30,7 +30,7 @@ class AutoTuner:
             rec = int(peak_mb * 1.2)
             tip = f"⚠️ Warning: Memory tight ({int(peak_mb)}MB). Recommend increasing to {rec}MB+."
         elif allocated_mb <= 128 and ratio > 0.5:
-            tip = f"💡 Tip: 초기화(Init) 과정을 제외하면 실제 코드는 훨씬 적은 메모리를 사용합니다. 하지만 안정적인 실행을 위해 현재 수준({allocated_mb}MB)을 유지하는 것을 권장합니다."
+            tip = f"💡 Tip: Excluding initialization, actual code uses much less memory. However, maintaining current level ({allocated_mb}MB) is recommended for stable execution."
             
         if not tip and io_mb > 50:
             tip = f"⚠️ High I/O ({int(io_mb)}MB) detected. Consider caching data."
