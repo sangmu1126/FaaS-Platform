@@ -129,17 +129,13 @@ class TaskExecutor:
                 task, peak_memory, host_output_dir, host_work_dir
             )
 
-            # 8. Release Container
-            self.containers.release_container(container, task.function_id)
-            container = None # Prevent cleanup in finally block
-
             return ExecutionResult(
                 request_id=task.request_id,
                 function_id=task.function_id,
                 success=(exit_code == 0),
                 exit_code=exit_code,
-                stdout=output_str, # Simple stdout capture (could be refined)
-                stderr="", # Docker exec combines streams usually, or we can separate
+                stdout=output_str,
+                stderr="",
                 duration_ms=duration_ms,
                 worker_id=socket.gethostname(),
                 peak_memory_bytes=peak_memory,
@@ -152,9 +148,6 @@ class TaskExecutor:
 
         except Exception as e:
             logger.error("Execution Flow Failed", error=str(e))
-            if container:
-                try: container.remove(force=True)
-                except: pass
             return ExecutionResult(
                 request_id=task.request_id,
                 function_id=task.function_id,
@@ -166,6 +159,9 @@ class TaskExecutor:
             )
         finally:
             self.metrics.global_limit.release()
+            # Always return container to pool regardless of success/failure
+            if container:
+                self.containers.release_container(container, task.function_id)
 
     def _create_busy_response(self, task, start_time):
         return ExecutionResult(
