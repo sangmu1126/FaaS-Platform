@@ -172,5 +172,24 @@ export const proxyService = {
         } catch (e) {
             return { error: "Failed to parse metrics" };
         }
+    },
+
+    // GET Worker Health Check
+    async fetchWorkerHealth() {
+        // Use worker health URL (port 8001)
+        const workerUrl = config.workerHealthUrl || config.awsAlbUrl.replace(':8080', ':8001');
+        const targetUrl = `${workerUrl}/health`;
+
+        const { statusCode, body } = await request(targetUrl, {
+            method: 'GET',
+            headersTimeout: 5000,
+            bodyTimeout: 5000
+        });
+
+        if (statusCode >= 400) {
+            throw new Error(`Worker returned ${statusCode}`);
+        }
+
+        return await body.json();
     }
 };
