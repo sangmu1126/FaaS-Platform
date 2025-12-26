@@ -78,8 +78,23 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
               ⚡ System Status
             </span>
-            <div className={`w-2 h-2 rounded-full ${systemStatus?.status === 'online' ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${systemStatus?.worker?.status === 'healthy' ? 'bg-green-400 animate-pulse' : systemStatus?.gateway?.status === 'online' ? 'bg-yellow-400' : 'bg-red-400'}`}></div>
+              <span className="text-xs text-gray-500">
+                {systemStatus?.worker?.status === 'healthy' ? 'Healthy' : systemStatus?.worker?.status === 'offline' ? 'Offline' : 'Gateway Only'}
+              </span>
+            </div>
           </div>
+
+          {/* Worker Uptime */}
+          {systemStatus?.worker?.uptime_seconds && (
+            <div className="flex items-center justify-between mb-2 text-xs">
+              <span className="text-gray-600">🏥 Worker Uptime</span>
+              <span className="text-green-600 font-medium">
+                {Math.floor(systemStatus.worker.uptime_seconds / 3600)}h {Math.floor((systemStatus.worker.uptime_seconds % 3600) / 60)}m
+              </span>
+            </div>
+          )}
 
           {/* Python */}
           <div className="flex items-center justify-between mb-2">
@@ -88,7 +103,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
               {[...Array(5)].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-2 h-2 rounded-full ${i < (systemStatus?.pools?.python || 0)
+                  className={`w-2 h-2 rounded-full ${i < (systemStatus?.worker?.pools?.python || 0)
                     ? 'bg-gradient-to-br from-blue-400 to-purple-400 animate-pulse'
                     : 'bg-gray-300'
                     }`}
@@ -98,7 +113,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
                   }}
                 />
               ))}
-              <span className="text-xs text-gray-500 ml-1">({systemStatus?.pools?.python || 0})</span>
+              <span className="text-xs text-gray-500 ml-1">({systemStatus?.worker?.pools?.python || 0})</span>
             </div>
           </div>
 
@@ -109,7 +124,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
               {[...Array(5)].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-2 h-2 rounded-full ${i < (systemStatus?.pools?.nodejs || 0)
+                  className={`w-2 h-2 rounded-full ${i < (systemStatus?.worker?.pools?.nodejs || 0)
                     ? 'bg-gradient-to-br from-blue-400 to-purple-400 animate-pulse'
                     : 'bg-gray-300'
                     }`}
@@ -119,7 +134,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
                   }}
                 />
               ))}
-              <span className="text-xs text-gray-500 ml-1">({systemStatus?.pools?.nodejs || 0})</span>
+              <span className="text-xs text-gray-500 ml-1">({systemStatus?.worker?.pools?.nodejs || 0})</span>
             </div>
           </div>
 
@@ -130,7 +145,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
               {[...Array(5)].map((_, i) => (
                 <div
                   key={i}
-                  className={`w-2 h-2 rounded-full ${i < ((systemStatus?.pools?.cpp || 0) + (systemStatus?.pools?.go || 0))
+                  className={`w-2 h-2 rounded-full ${i < ((systemStatus?.worker?.pools?.cpp || 0) + (systemStatus?.worker?.pools?.go || 0))
                     ? 'bg-gradient-to-br from-blue-400 to-purple-400 animate-pulse'
                     : 'bg-gray-300'
                     }`}
@@ -140,7 +155,7 @@ export default function Sidebar({ onSystemStatusClick }: SidebarProps) {
                   }}
                 />
               ))}
-              <span className="text-xs text-gray-500 ml-1">({(systemStatus?.pools?.cpp || 0) + (systemStatus?.pools?.go || 0)})</span>
+              <span className="text-xs text-gray-500 ml-1">({(systemStatus?.worker?.pools?.cpp || 0) + (systemStatus?.worker?.pools?.go || 0)})</span>
             </div>
           </div>
 
