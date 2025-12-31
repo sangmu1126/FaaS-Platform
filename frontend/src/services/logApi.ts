@@ -17,9 +17,8 @@ interface LogResponse {
 }
 
 export const logApi = {
-  // Get logs with filters (Client-side filtering because backend returns simple array)
   getLogs: async (filters?: LogFilters): Promise<LogResponse> => {
-    // 1. If tailored for a specific function, use the persistent storage (DynamoDB)
+    // Filtered Logs
     if (filters?.functionId && filters.functionId !== 'all') {
       const logs = await logApi.getFunctionLogs(filters.functionId, filters.limit || 50);
       return {
@@ -29,17 +28,16 @@ export const logApi = {
       };
     }
 
-    // 2. Otherwise receive all recent logs from memory (Global view)
+    // Global Logs (Memory)
     const allLogs = await apiClient.get<any[]>('/logs');
 
-    // 3. Filter locally
     let filtered = Array.isArray(allLogs) ? allLogs : [];
 
     if (filters?.level) {
       filtered = filtered.filter(l => l.level?.toLowerCase() === filters.level?.toLowerCase());
     }
 
-    // 4. Pagination (Client-side)
+    // Pagination
     const total = filtered.length;
     const limit = filters?.limit || 50;
     const offset = filters?.offset || 0;
@@ -97,9 +95,20 @@ export const logApi = {
   },
 
   // Clear logs for function
-  clearFunctionLogs: async (functionId: string): Promise<void> => {
+  clearFunctionLogs: async (_functionId: string): Promise<void> => {
     // Not supported by backend
     console.warn("Clear logs not supported by backend");
     return;
   },
+
+  // Get full log detail (on-demand)
+  getLogDetail: async (functionId: string, requestId: string): Promise<string> => {
+    try {
+      const response = await apiClient.get<any>(`/functions/${functionId}/logs/${requestId}`);
+      return response.message || "No content.";
+    } catch (e) {
+      console.error("Failed to fetch log detail", e);
+      return "Failed to load detailed log.";
+    }
+  }
 };
