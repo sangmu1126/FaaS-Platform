@@ -225,10 +225,8 @@ class TaskExecutor:
 
         def _run_streaming():
              try:
-                 # exec_run returns vary by docker-py version
                  exec_result = container.exec_run(final_cmd, workdir="/workspace", environment=env, stream=True)
                  
-                 # Handle both tuple (exit_code, generator) and just generator
                  if isinstance(exec_result, tuple):
                      stream = exec_result[1]
                  else:
@@ -238,10 +236,13 @@ class TaskExecutor:
                      for chunk in stream:
                          if chunk:
                              f.write(chunk)
+                     f.flush()
+                     os.fsync(f.fileno())  # Force write to disk
              except Exception as e:
                  logger.error("Stream error", error=str(e))
                  with open(log_file, "ab") as f:
                      f.write(f"\n[System Error] {str(e)}".encode())
+                     f.flush()
 
         t = threading.Thread(target=_run_streaming)
         t.start()
