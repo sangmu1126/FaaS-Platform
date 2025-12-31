@@ -85,6 +85,11 @@ resource "aws_dynamodb_table" "logs_table" {
     name = "timestamp"
     type = "S"
   }
+
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
+  }
 }
 
 # 3. SQS Queue for Tasks
