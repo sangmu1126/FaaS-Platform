@@ -75,8 +75,10 @@ export const gatewayController = {
                 ? decodeURIComponent(req.headers['x-function-name'])
                 : req.body.name || null;
 
+            const envVars = req.body.envVars || "{}";
+
             // 1. Proxy Upload with Optimization
-            const result = await proxyService.uploadFunction(req.file, runtime, functionId, memoryMb, functionName);
+            const result = await proxyService.uploadFunction(req.file, runtime, functionId, memoryMb, functionName, envVars);
 
             // 2. Notify Slack
             slackService.notifyDeploy(result.functionId, runtime, req.file.originalname);

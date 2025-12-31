@@ -6,7 +6,7 @@ import FormData from 'form-data';
 export const proxyService = {
 
     // Smart Upload with Runtime Optimization
-    async uploadFunction(file, runtime, functionId, memoryMb, functionName) {
+    async uploadFunction(file, runtime, functionId, memoryMb, functionName, envVars) {
         const targetUrl = `${config.awsAlbUrl}/upload`;
 
         // 1. Runtime Optimization Logic
@@ -22,6 +22,9 @@ export const proxyService = {
         // 2. Construct FormData (using form-data package)
         const formData = new FormData();
         formData.append('file', file.buffer, { filename, contentType });
+        if (envVars) {
+            formData.append('envVars', envVars);
+        }
 
         // 3. Get FormData as Buffer (synchronous, avoids stream issues)
         const formDataBuffer = formData.getBuffer();
