@@ -110,7 +110,7 @@ redisSub.on('pmessage', (pattern, channel, message) => {
         if (requestId) {
             responseEmitter.emit(requestId, message);
 
-            // 1. Persist execution log for "Recent Invocations" display
+            // Persist execution log
             try {
                 // Safe JSON Parse
                 let result;
@@ -159,7 +159,7 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                     })).catch(err => console.error("Failed to persist log to DynamoDB", err));
                 }
 
-                // 3. Add to In-Memory Log Buffer (Keep for compatibility)
+                // Add to In-Memory Buffer
                 addLog(
                     result.status === 'SUCCESS' ? 'INFO' : 'ERROR',
                     `Function Executed: ${result.functionId}`,
@@ -179,7 +179,6 @@ redisSub.on('pmessage', (pattern, channel, message) => {
     }
 });
 
-// app.use(express.json) Moved to top
 
 // Auth Middleware
 const authenticate = (req, res, next) => {
@@ -245,7 +244,7 @@ const upload = multer({
     limits: { fileSize: 50 * 1024 * 1024 }
 });
 
-// 0. Health Check
+// Health Check
 app.get('/health', (req, res) => {
     const status = isRedisConnected ? 200 : 503;
     res.status(status).json({ status: isRedisConnected ? 'OK' : 'ERROR', version: VERSION });
@@ -260,7 +259,7 @@ app.get('/metrics', async (req, res) => {
     }
 });
 
-// 0.2 Model Catalog
+// Model Catalog
 app.get('/models', async (req, res) => {
     try {
         const aiNodeUrl = process.env.AI_NODE_URL || 'http://10.0.20.100:11434';
@@ -291,8 +290,7 @@ app.get('/models', async (req, res) => {
     }
 });
 
-// 0.3 System Status (Warm Pool)
-// Reads real-time worker status from Redis (published by agent.py)
+// System Status
 app.get('/system/status', cors(), async (req, res) => {
     try {
         const raw = await redis.get("system:status");
@@ -313,7 +311,7 @@ app.get('/system/status', cors(), async (req, res) => {
     }
 });
 
-// [Security] Validation Middleware (Headers) - Imported from reference
+// Validation Middleware (Headers)
 const validateUploadRequest = (req, res, next) => {
     const ALLOWED_RUNTIMES = ["python", "cpp", "nodejs", "go"];
     const runtime = req.headers['x-runtime'] || "python";
@@ -366,7 +364,7 @@ app.post('/upload', authenticate, rateLimiter, validateUploadRequest, upload.sin
     }
 });
 
-// 2. Run
+// Run
 app.post('/run', authenticate, rateLimiter, async (req, res) => {
     const { functionId, inputData, modelId } = req.body || {};
     const isAsync = req.headers['x-async'] === 'true';
@@ -481,7 +479,12 @@ app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res)
         res.json(items);
     } catch (error) { res.status(500).json([]); }
 });
-app.get(['/logs', '/api/logs'], cors(), authenticate, (req, res) => { res.json(logBuffer); });
+app.get(['/logs', '/api/logs'], cors(), authenticate, (req, res) => {
+    res.json(logBuffer.map(l => ({
+        ...l,
+        msg: (l.msg || "").length > 200 ? (l.msg || "").substring(0, 200) + "..." : (l.msg || "")
+    })));
+});
 app.get(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (req, res) => {
     try {
         const response = await db.send(new GetItemCommand({ TableName: process.env.TABLE_NAME, Key: { functionId: { S: req.params.id } } }));
@@ -499,10 +502,22 @@ app.get(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (r
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// [NEW] GET /api/functions/:id/logs (Execution History from DynamoDB)
+// GET /api/functions/:id/logs
 app.get('/api/functions/:id/logs', cors(), authenticate, async (req, res) => {
     try {
-        if (!process.env.LOGS_TABLE_NAME) return res.json([]); // Not configured
+        if (!process.env.LOGS_TABLE_NAME) {
+            // Local Dev Fallback
+            const logs = logBuffer.filter(l => l.functionId === req.params.id);
+            return res.json(logs.map(l => ({
+                id: l.requestId,
+                requestId: l.requestId,
+                timestamp: l.timestamp,
+                status: l.status,
+                duration: l.duration,
+                memory: l.memory,
+                message: (l.msg || "").length > 200 ? (l.msg || "").substring(0, 200) + "..." : (l.msg || "")
+            })));
+        }
 
         const limit = parseInt(req.query.limit) || 20;
         const command = new QueryCommand({
@@ -516,28 +531,66 @@ app.get('/api/functions/:id/logs', cors(), authenticate, async (req, res) => {
         });
 
         const response = await db.send(command);
-        const logs = response.Items.map(item => ({
-            id: item.requestId?.S, // Use requestId as ID
-            requestId: item.requestId?.S,
-            timestamp: item.timestamp?.S,
-            status: item.status?.S,
-            duration: item.duration?.N ? parseInt(item.duration.N) : 0,
-            memory: item.memoryMb?.N ? parseInt(item.memoryMb.N) : 0,
-            message: item.message?.S || ""
-        }));
+        const logs = response.Items.map(item => {
+            const rawMsg = item.message?.S || "";
+            return {
+                id: item.requestId?.S, // Use requestId as ID
+                requestId: item.requestId?.S,
+                timestamp: item.timestamp?.S,
+                status: item.status?.S,
+                duration: item.duration?.N ? parseInt(item.duration.N) : 0,
+                memory: item.memoryMb?.N ? parseInt(item.memoryMb.N) : 0,
+                message: rawMsg.length > 200 ? rawMsg.substring(0, 200) + "..." : rawMsg
+            };
+        });
 
         res.json(logs);
-    } catch (error) {
-        logger.error("Fetch Logs Error", error);
-        res.status(500).json({ error: "Failed to fetch logs" });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /functions/:id (Update)
+// GET /api/functions/:id/logs/:requestId
+app.get('/api/functions/:id/logs/:requestId', cors(), authenticate, async (req, res) => {
+    try {
+        const { id, requestId } = req.params;
+
+        if (!process.env.LOGS_TABLE_NAME) {
+            // Fallback: In-memory
+            const log = logBuffer.find(l => l.functionId === id && l.requestId === requestId);
+            if (!log) return res.status(404).json({ error: "Log not found" });
+            return res.json({
+                message: log.msg || ""
+            });
+        }
+
+        // DynamoDB Query
+
+        const command = new QueryCommand({
+            TableName: process.env.LOGS_TABLE_NAME,
+            KeyConditionExpression: "functionId = :fid",
+            FilterExpression: "requestId = :rid",
+            ExpressionAttributeValues: {
+                ":fid": { S: id },
+                ":rid": { S: requestId }
+            },
+            Limit: 1
+        });
+
+        const response = await db.send(command);
+        if (!response.Items || response.Items.length === 0) {
+            return res.status(404).json({ error: "Log not found" });
+        }
+
+        const item = response.Items[0];
+        res.json({
+            message: item.message?.S || ""
+        });
+
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// PUT /functions/:id
 app.put(['/functions/:id', '/api/functions/:id'], authenticate, upload.single('file'), async (req, res) => {
     const functionId = req.params.id;
     try {
-        // 1. If new file uploaded, update S3 Key
         let updateExpression = "set updated_at = :t";
         let expressionAttributeValues = {
             ":t": { S: new Date().toISOString() }
@@ -589,14 +642,12 @@ app.put(['/functions/:id', '/api/functions/:id'], authenticate, upload.single('f
 app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (req, res) => {
     const functionId = req.params.id;
     try {
-        // 1. Get S3 Key first
         const getCmd = new GetItemCommand({
             TableName: process.env.TABLE_NAME,
             Key: { functionId: { S: functionId } }
         });
         const item = await db.send(getCmd);
 
-        // 2. Delete S3 file
         if (item.Item && item.Item.s3Key) {
             await s3.send(new DeleteObjectCommand({
                 Bucket: process.env.BUCKET_NAME,
@@ -604,7 +655,6 @@ app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async
             }));
         }
 
-        // 3. Delete metadata
         await db.send(new DeleteItemCommand({
             TableName: process.env.TABLE_NAME,
             Key: { functionId: { S: functionId } }
@@ -619,8 +669,7 @@ app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async
     }
 });
 
-// Improved Global Error Handler
-// Prevents 500 crashes from non-critical errors (e.g. Malformed JSON from curl)
+// Global Error Handler
 app.use((err, req, res, next) => {
     logger.error("Global Error Handler", err);
     res.status(err.status || 500).json({ error: err.message || "Internal Server Error" });
@@ -631,7 +680,7 @@ const server = app.listen(PORT, () => {
 });
 server.setTimeout(300000);
 
-// Graceful Shutdown - Merged from reference + safety
+// Graceful Shutdown
 process.on('SIGTERM', () => {
     logger.info("SIGTERM received. Starting graceful shutdown...");
     server.close(() => {
