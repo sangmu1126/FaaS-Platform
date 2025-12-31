@@ -19,24 +19,42 @@ interface LogResponse {
 export const logApi = {
   // Get logs with filters (Client-side filtering because backend returns simple array)
   getLogs: async (filters?: LogFilters): Promise<LogResponse> => {
-    // 1. Fetch all logs
+    // 1. If tailored for a specific function, use the persistent storage (DynamoDB)
+    if (filters?.functionId && filters.functionId !== 'all') {
+      const logs = await logApi.getFunctionLogs(filters.functionId, filters.limit || 50);
+      return {
+        logs,
+        total: logs.length, // DynamoDB query doesn't return total count easily without scan
+        hasMore: logs.length >= (filters.limit || 50)
+      };
+    }
+
+    // 2. Otherwise receive all recent logs from memory (Global view)
     const allLogs = await apiClient.get<any[]>('/logs');
 
-    // 2. Filter locally
+    // 3. Filter locally
     let filtered = Array.isArray(allLogs) ? allLogs : [];
 
-    if (filters?.functionId) {
-      filtered = filtered.filter(l => l.functionId === filters.functionId);
-    }
     if (filters?.level) {
       filtered = filtered.filter(l => l.level?.toLowerCase() === filters.level?.toLowerCase());
     }
 
-    // 3. Pagination (Client-side)
+    // 4. Pagination (Client-side)
     const total = filtered.length;
     const limit = filters?.limit || 50;
     const offset = filters?.offset || 0;
-    const logs = filtered.slice(offset, offset + limit);
+    const logs = filtered.slice(offset, offset + limit).map((l: any) => ({
+      id: l.id,
+      timestamp: l.timestamp,
+      functionId: l.functionId,
+      functionName: l.functionId, // Name not available in simple log
+      level: l.level || 'info',
+      message: l.msg || l.message,
+      duration: l.duration || 0,
+      memory: l.memory || 0,
+      requestId: l.requestId,
+      status: (l.status || 'INFO') as any
+    }));
 
     return {
       logs,

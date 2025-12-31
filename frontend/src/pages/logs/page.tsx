@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
-import { useNavigate } from 'react-router-dom';
+// import { useNavigate } from 'react-router-dom'; // Removed
 import { logApi } from '../../services/logApi';
 import { functionApi } from '../../services/functionApi';
 
@@ -16,7 +16,6 @@ interface LogEntry {
 }
 
 export default function LogsPage() {
-  const navigate = useNavigate();
   const [selectedFunction, setSelectedFunction] = useState('all');
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -33,11 +32,23 @@ export default function LogsPage() {
     }, {} as Record<string, string>);
   }, [functionsList]);
 
-  const fetchLogs = async () => {
+  /* Filters State - Moved up for reference in fetchLogs if needed, 
+     but fetchLogs uses current state directly only if passed as args or ref.
+     React state closure issue: functions defined inside component see render-time state.
+     We should probably pass args to fetchLogs or use useEffect dependencies. */
+
+  const fetchLogs = async (funcId = selectedFunction, level = selectedLevel) => {
     try {
       setIsRefreshing(true);
-      const response = await logApi.getLogs();
-      const rawLogs = Array.isArray(response) ? response : (response as any).logs || [];
+
+      // Pass filters to API
+      const response = await logApi.getLogs({
+        functionId: funcId,
+        level: level === 'all' ? undefined : (level as 'info' | 'warning' | 'error'),
+        limit: logsPerPage
+      });
+
+      const rawLogs = response.logs;
 
       // Filter & Map Logs
       const processedLogs: LogEntry[] = rawLogs
@@ -156,11 +167,13 @@ export default function LogsPage() {
   const handleFunctionChange = (value: string) => {
     setSelectedFunction(value);
     setCurrentPage(1);
+    fetchLogs(value, selectedLevel); // Immediate fetch
   };
 
   const handleLevelChange = (value: string) => {
     setSelectedLevel(value);
     setCurrentPage(1);
+    fetchLogs(selectedFunction, value); // Immediate fetch
   };
 
   // ... (useEffect remains same) ...
