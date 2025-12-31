@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
-// import { useNavigate } from 'react-router-dom'; // Removed
 import { logApi } from '../../services/logApi';
 import { functionApi } from '../../services/functionApi';
 
@@ -13,10 +12,42 @@ interface LogEntry {
   message: string;
   duration: number;
   requestId: string;
+  functionId: string;
 }
 
 export default function LogsPage() {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const toggleExpand = async (id: string) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+
+    setExpandedId(id);
+
+    // Check if we need to fetch full log
+    const logIndex = logs.findIndex(l => l.id === id);
+    if (logIndex >= 0) {
+      const log = logs[logIndex];
+      if (log.message && (log.message.endsWith('...') || log.message.length === 200)) {
+        try {
+          // Fetch detail
+          const fullMessage = await logApi.getLogDetail(log.functionId, log.requestId);
+
+          // Update state
+          const newLogs = [...logs];
+          newLogs[logIndex] = { ...log, message: fullMessage };
+          setLogs(newLogs);
+        } catch (e) {
+          console.error("Failed to load full log", e);
+        }
+      }
+    }
+  };
+
   const [selectedFunction, setSelectedFunction] = useState('all');
+
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -32,10 +63,6 @@ export default function LogsPage() {
     }, {} as Record<string, string>);
   }, [functionsList]);
 
-  /* Filters State - Moved up for reference in fetchLogs if needed, 
-     but fetchLogs uses current state directly only if passed as args or ref.
-     React state closure issue: functions defined inside component see render-time state.
-     We should probably pass args to fetchLogs or use useEffect dependencies. */
 
   const fetchLogs = async (funcId = selectedFunction, level = selectedLevel) => {
     try {
@@ -87,6 +114,7 @@ export default function LogsPage() {
           return {
             id: l.id,
             timestamp: l.timestamp,
+            functionId: l.functionId,
             functionName: functionNameMap[l.functionId] || l.functionId || 'Unknown',
             level: normalizedLevel,
             message: msg,
@@ -296,60 +324,84 @@ export default function LogsPage() {
                   // @ts-ignore
                   const statusConfig = getStatusConfig(log.status || 'INFO');
 
+                  const isExpanded = expandedId === log.id;
+
                   return (
-                    <div key={log.id} className="px-6 py-4 hover:bg-gray-50/50 transition-colors border-l-4 border-l-transparent hover:border-l-blue-500">
-                      <div className="flex items-center gap-4">
-                        {/* Status Icon Box */}
-                        <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center border ${statusConfig.color} bg-opacity-50`}>
-                          <i className={`${statusConfig.icon} text-lg`}></i>
-                        </div>
+                    <div key={log.id} className={`transition-all border-l-4 ${isExpanded ? 'bg-blue-50/50 border-l-blue-500 shadow-sm my-2 rounded-xl' : 'hover:bg-gray-50/50 border-l-transparent hover:border-l-blue-500'}`}>
+                      <div className="px-6 py-4 cursor-pointer" onClick={() => toggleExpand(log.id)}>
+                        <div className="flex items-center gap-4">
+                          {/* Status Icon Box */}
+                          <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center border ${statusConfig.color} bg-opacity-50`}>
+                            <i className={`${statusConfig.icon} text-lg`}></i>
+                          </div>
 
-                        {/* Main Content */}
-                        <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
-                          {/* Col 1: Function & Time */}
-                          <div className="col-span-4">
-                            <h3 className="text-sm font-bold text-gray-900 truncate mb-1">
-                              {log.functionName}
-                            </h3>
-                            <div className="flex items-center gap-2 text-xs text-gray-500">
-                              <i className="ri-time-line"></i>
-                              <span>{new Date(log.timestamp).toLocaleString()}</span>
+                          {/* Main Content */}
+                          <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
+                            {/* Col 1: Function & Time */}
+                            <div className="col-span-4">
+                              <h3 className="text-sm font-bold text-gray-900 truncate mb-1">
+                                {log.functionName}
+                              </h3>
+                              <div className="flex items-center gap-2 text-xs text-gray-500">
+                                <i className="ri-time-line"></i>
+                                <span>{new Date(log.timestamp).toLocaleString()}</span>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Col 2: Status Badge */}
-                          <div className="col-span-2">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${statusConfig.color}`}>
-                              {statusConfig.icon.includes('spin') && <i className="ri-loader-4-line animate-spin"></i>}
-                              {statusConfig.label}
-                            </span>
-                          </div>
-
-                          {/* Col 3: Metrics */}
-                          <div className="col-span-4 flex items-center gap-6">
-                            <div className="flex flex-col">
-                              <span className="text-xs text-gray-500 mb-0.5">응답 시간</span>
-                              <span className="text-sm font-mono font-medium text-gray-700">
-                                {log.duration ? `${log.duration}ms` : '-'}
+                            {/* Col 2: Status Badge */}
+                            <div className="col-span-2">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${statusConfig.color}`}>
+                                {statusConfig.icon.includes('spin') && <i className="ri-loader-4-line animate-spin"></i>}
+                                {statusConfig.label}
                               </span>
                             </div>
-                            <div className="flex flex-col">
-                              <span className="text-xs text-gray-500 mb-0.5">메모리</span>
-                              <span className="text-sm font-mono font-medium text-gray-700">
-                                {/* @ts-ignore */}
-                                {log.memory ? `${log.memory} MB` : '-'}
-                              </span>
-                            </div>
-                          </div>
 
-                          {/* Col 4: Action */}
-                          <div className="col-span-2 flex justify-end">
-                            <button className="text-gray-400 hover:text-blue-600 transition-colors p-2 rounded-full hover:bg-blue-50">
-                              <i className="ri-arrow-right-s-line text-xl"></i>
-                            </button>
+                            {/* Col 3: Metrics */}
+                            <div className="col-span-4 flex items-center gap-6">
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-0.5">응답 시간</span>
+                                <span className="text-sm font-mono font-medium text-gray-700">
+                                  {log.duration ? `${log.duration}ms` : '-'}
+                                </span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-500 mb-0.5">메모리</span>
+                                <span className="text-sm font-mono font-medium text-gray-700">
+                                  {/* @ts-ignore */}
+                                  {log.memory ? `${log.memory} MB` : '-'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Col 4: Action */}
+                            <div className="col-span-2 flex justify-end">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleExpand(log.id); }}
+                                className={`text-gray-400 hover:text-blue-600 transition-all p-2 rounded-full hover:bg-blue-50 ${isExpanded ? 'rotate-90 text-blue-600 bg-blue-50' : ''}`}
+                              >
+                                <i className="ri-arrow-right-s-line text-xl"></i>
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
+
+                      {/* Expanded Details */}
+                      {isExpanded && (
+                        <div className="px-6 pb-4 pt-0 animate-in slide-in-from-top-2 duration-200">
+                          <div className="ml-14 bg-gray-900 rounded-xl p-4 overflow-hidden border border-gray-800 shadow-inner">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Log Output</span>
+                              <div className="flex gap-2">
+                                <span className="text-xs text-gray-500">ID: {log.requestId}</span>
+                              </div>
+                            </div>
+                            <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all max-h-96 overflow-y-auto custom-scrollbar">
+                              {log.message || "No output captured."}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
