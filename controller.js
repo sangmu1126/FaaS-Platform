@@ -5,7 +5,7 @@ const multer = require('multer');
 const multerS3 = require('multer-s3');
 
 const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3");
-const { DynamoDBClient, PutItemCommand, GetItemCommand, ScanCommand, DeleteItemCommand, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBClient, PutItemCommand, GetItemCommand, ScanCommand, DeleteItemCommand, UpdateItemCommand, QueryCommand } = require("@aws-sdk/client-dynamodb");
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
 const Redis = require("ioredis");
 const { v4: uuidv4 } = require('uuid');
@@ -111,26 +111,41 @@ redisSub.on('pmessage', (pattern, channel, message) => {
             responseEmitter.emit(requestId, message);
 
             // 1. Persist execution log for "Recent Invocations" display
-            // This ensures results appear in the frontend table even if the user isn't actively waiting
             try {
                 // Safe JSON Parse
                 let result;
                 try {
                     result = JSON.parse(message);
                 } catch (jsonErr) {
-                    // Log but don't crash if message is malformed
                     console.error("[ERROR] JSON Parse Failed in Subscriber", jsonErr);
                     return;
                 }
 
                 if (!result || !result.functionId) return;
 
-                // 2. Normalize fields (Handle CamelCase vs Snake_case differences between Worker/Controller)
                 const duration = result.durationMs !== undefined ? result.durationMs : (result.duration_ms || 0);
                 const memoryBytes = result.peakMemoryBytes !== undefined ? result.peakMemoryBytes : (result.peak_memory_bytes || 0);
                 const memoryMb = memoryBytes ? Math.round(memoryBytes / 1024 / 1024) : 0;
 
-                // 3. Add to In-Memory Log Buffer
+                // [NEW] Persist to DynamoDB Logs Table
+                if (process.env.LOGS_TABLE_NAME) {
+                    const logItem = {
+                        functionId: { S: result.functionId },
+                        timestamp: { S: new Date().toISOString() },
+                        requestId: { S: requestId },
+                        status: { S: result.status || (result.exitCode === 0 ? "SUCCESS" : "ERROR") },
+                        duration: { N: duration.toString() },
+                        memoryMb: { N: memoryMb.toString() },
+                        message: { S: result.stderr || result.stdout || "" }
+                    };
+
+                    db.send(new PutItemCommand({
+                        TableName: process.env.LOGS_TABLE_NAME,
+                        Item: logItem
+                    })).catch(err => console.error("Failed to persist log to DynamoDB", err));
+                }
+
+                // 3. Add to In-Memory Log Buffer (Keep for compatibility)
                 addLog(
                     result.status === 'SUCCESS' ? 'INFO' : 'ERROR',
                     `Function Executed: ${result.functionId}`,
@@ -468,6 +483,40 @@ app.get(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async (r
             uploadedAt: item.uploadedAt?.S
         });
     } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// [NEW] GET /api/functions/:id/logs (Execution History from DynamoDB)
+app.get('/api/functions/:id/logs', cors(), authenticate, async (req, res) => {
+    try {
+        if (!process.env.LOGS_TABLE_NAME) return res.json([]); // Not configured
+
+        const limit = parseInt(req.query.limit) || 20;
+        const command = new QueryCommand({
+            TableName: process.env.LOGS_TABLE_NAME,
+            KeyConditionExpression: "functionId = :fid",
+            ExpressionAttributeValues: {
+                ":fid": { S: req.params.id }
+            },
+            ScanIndexForward: false, // Descending order (newest first)
+            Limit: limit
+        });
+
+        const response = await db.send(command);
+        const logs = response.Items.map(item => ({
+            id: item.requestId?.S, // Use requestId as ID
+            requestId: item.requestId?.S,
+            timestamp: item.timestamp?.S,
+            status: item.status?.S,
+            duration: item.duration?.N ? parseInt(item.duration.N) : 0,
+            memory: item.memoryMb?.N ? parseInt(item.memoryMb.N) : 0,
+            message: item.message?.S || ""
+        }));
+
+        res.json(logs);
+    } catch (error) {
+        logger.error("Fetch Logs Error", error);
+        res.status(500).json({ error: "Failed to fetch logs" });
+    }
 });
 
 // PUT /functions/:id (Update)
