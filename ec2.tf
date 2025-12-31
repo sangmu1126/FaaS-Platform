@@ -152,28 +152,17 @@ resource "aws_instance" "controller" {
   depends_on = [aws_elasticache_cluster.redis]
 }
 
-resource "aws_instance" "worker" {
-  ami                         = data.aws_ami.al2023.id
-  instance_type               = "t3.micro"
-  key_name                    = aws_key_pair.kp.key_name
-  subnet_id                   = data.aws_subnets.default.ids[0]
-  associate_public_ip_address = true # Required for SSH
+# NOTE: Worker instances are now managed by Auto Scaling Group
+# See asg.tf for Launch Template and ASG configuration
+# Keeping this comment for reference of original configuration:
+#
+# resource "aws_instance" "worker" {
+#   ami                         = data.aws_ami.al2023.id
+#   instance_type               = "t3.micro"
+#   key_name                    = aws_key_pair.kp.key_name
+#   subnet_id                   = data.aws_subnets.default.ids[0]
+#   associate_public_ip_address = true
+#   vpc_security_group_ids      = [aws_security_group.worker_sg.id]
+#   ...
+# }
 
-  vpc_security_group_ids = [aws_security_group.worker_sg.id]
-
-  tags = {
-    Name = "${var.project_name}-worker"
-  }
-
-  user_data = templatefile("${path.module}/user_data_worker.sh", {
-    aws_region     = var.aws_region
-    sqs_url        = aws_sqs_queue.task_queue.url
-    bucket_name    = aws_s3_bucket.code_bucket.bucket
-    table_name     = aws_dynamodb_table.metadata_table.name
-    redis_host     = aws_elasticache_cluster.redis.cache_nodes[0].address
-    aws_access_key = var.aws_access_key
-    aws_secret_key = var.aws_secret_key
-  })
-
-  depends_on = [aws_elasticache_cluster.redis]
-}
