@@ -245,12 +245,12 @@ const upload = multer({
 });
 
 // Health Check
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
     const status = isRedisConnected ? 200 : 503;
     res.status(status).json({ status: isRedisConnected ? 'OK' : 'ERROR', version: VERSION });
 });
 
-app.get('/metrics', async (req, res) => {
+app.get(['/metrics', '/api/metrics'], async (req, res) => {
     try {
         res.set('Content-Type', register.contentType);
         res.end(await register.metrics());
@@ -260,7 +260,7 @@ app.get('/metrics', async (req, res) => {
 });
 
 // Model Catalog
-app.get('/models', async (req, res) => {
+app.get(['/models', '/api/models'], async (req, res) => {
     try {
         const aiNodeUrl = process.env.AI_NODE_URL || 'http://10.0.20.100:11434';
         const timeoutMs = parseInt(process.env.AI_NODE_TIMEOUT || "2000");
@@ -291,7 +291,7 @@ app.get('/models', async (req, res) => {
 });
 
 // System Status
-app.get('/system/status', cors(), async (req, res) => {
+app.get(['/system/status', '/api/system/status'], cors(), async (req, res) => {
     try {
         const raw = await redis.get("system:status");
         if (!raw) {
@@ -334,7 +334,7 @@ const validateUploadRequest = (req, res, next) => {
     next();
 };
 
-app.post('/upload', authenticate, rateLimiter, validateUploadRequest, upload.single('file'), async (req, res) => {
+app.post(['/upload', '/api/upload'], authenticate, rateLimiter, validateUploadRequest, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "No file provided" });
         const functionId = req.functionId || uuidv4();
@@ -365,7 +365,7 @@ app.post('/upload', authenticate, rateLimiter, validateUploadRequest, upload.sin
 });
 
 // Run
-app.post('/run', authenticate, rateLimiter, async (req, res) => {
+app.post(['/run', '/api/run'], authenticate, rateLimiter, async (req, res) => {
     const { functionId, inputData, modelId } = req.body || {};
     const isAsync = req.headers['x-async'] === 'true';
     if (!functionId) return res.status(400).json({ error: "functionId is required" });
