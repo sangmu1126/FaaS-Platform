@@ -220,7 +220,12 @@ class TaskExecutor:
         
         def _run():
             try:
+                # Truncate output to prevent OOM
                 ec, out = container.exec_run(cmd, workdir="/workspace", environment=env)
+                
+                if len(out) > config.MAX_OUTPUT_SIZE:
+                    out = out[:config.MAX_OUTPUT_SIZE] + b"\n...[TRUNCATED: Output exceeded limit]..."
+                    
                 result["exit_code"] = ec
                 result["output"] = out
             except Exception as e:
