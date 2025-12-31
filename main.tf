@@ -41,6 +41,11 @@ variable "aws_secret_key" {
   sensitive   = true
 }
 
+variable "warm_pool_python_size" {
+  description = "Number of warm containers for Python runtime"
+  default     = 5
+}
+
 # 1. S3 Bucket for Code Storage
 resource "aws_s3_bucket" "code_bucket" {
   bucket_prefix = "${var.project_name}-code-"
