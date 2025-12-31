@@ -69,8 +69,12 @@ class TaskExecutor:
 
             is_warm = getattr(container, "is_warm", False)
             
-            # 2. Resource Limits
-            self.containers.update_resources(container, task.memory_mb)
+            # 2. Resource Limits (Optimized: skip if warm container has same memory)
+            current_mem = getattr(container, "_mem_limit_mb", None)
+            if not is_warm or current_mem != task.memory_mb:
+                self.containers.update_resources(container, task.memory_mb)
+                container._mem_limit_mb = task.memory_mb
+
             
             # 3. Workspace Preparation
             if is_warm:
