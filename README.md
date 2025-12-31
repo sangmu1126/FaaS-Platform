@@ -125,6 +125,27 @@ All requests require the `x-api-key` header.
 
 ---
 
+## 💻 Terminal Output Demo
+
+**Server Startup:**
+```json
+{"level":"INFO","timestamp":"2023-10-27T10:00:01.123Z","msg":"Global Redis Connected Successfully"}
+{"level":"INFO","timestamp":"2023-10-27T10:00:01.125Z","msg":"Global Redis Subscriber Connected"}
+{"level":"INFO","timestamp":"2023-10-27T10:00:01.135Z","msg":"Infra Controller v2.4 Started","port":8080}
+```
+
+**Function Execution:**
+```json
+{"level":"INFO","timestamp":"2023-10-27T10:05:22.450Z","msg":"Run Request","requestId":"a1b2c3d4...","functionId":"func-123","mode":"SYNC"}
+```
+
+**Error Handling:**
+```json
+{"level":"ERROR","timestamp":"2023-10-27T10:06:00.000Z","msg":"Upload Error","error":"Invalid memoryMb. Must be between 128 and 10240."}
+```
+
+---
+
 <div align="center">
   <sub>Built with ❤️ by Softbank-Final Team</sub>
 </div>
