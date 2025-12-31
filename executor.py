@@ -230,8 +230,6 @@ class TaskExecutor:
                 with open(log_file, "wb") as f:
                     if exec_result.output:
                         f.write(exec_result.output)
-                    f.flush()
-                    os.fsync(f.fileno())
             except Exception as e:
                 logger.error("Exec error", error=str(e))
                 with open(log_file, "wb") as f:
