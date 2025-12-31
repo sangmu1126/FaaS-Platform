@@ -223,9 +223,12 @@ func main() {
       formDataToSend.append('functionId', formData.name);
       formDataToSend.append('runtime', formData.runtime);
       formDataToSend.append('memoryMb', formData.memory.toString());
-      // TODO: Implement Environment Variables transmission
-      // formData.envVars needs to be sent as JSON or individual fields
-      // formDataToSend.append('envVars', JSON.stringify(formData.envVars));
+      // Send Environment Variables as JSON object string
+      const envVarsObject = formData.envVars.reduce((acc, curr) => {
+        if (curr.key) acc[curr.key] = curr.value;
+        return acc;
+      }, {} as Record<string, string>);
+      formDataToSend.append('envVars', JSON.stringify(envVarsObject));
 
       // Use configured API URL or Fallback
 
