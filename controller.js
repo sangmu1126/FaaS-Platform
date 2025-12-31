@@ -321,9 +321,8 @@ app.post('/upload', authenticate, rateLimiter, validateUploadRequest, upload.sin
                 originalName: { S: req.file.originalname },
                 runtime: { S: req.validatedRuntime },
                 memoryMb: { N: req.validatedMemoryMb.toString() },
-                uploadedAt: { S: new Date().toISOString() }
-                // TODO: Store Environment Variables in DynamoDB
-                // envVars: { S: req.body.envVars || "[]" }
+                uploadedAt: { S: new Date().toISOString() },
+                envVars: { S: req.body.envVars || "{}" }
             }
         }));
         logger.info(`Upload Success`, { functionId });
@@ -360,6 +359,16 @@ app.post('/run', authenticate, rateLimiter, async (req, res) => {
             ExpressionAttributeValues: { ":inc": { N: "1" } }
         })).catch(err => logger.error("Count Update Failed", err));
 
+        // Parse Env Vars from DynamoDB
+        let envVars = {};
+        if (Item.envVars && Item.envVars.S) {
+            try {
+                envVars = JSON.parse(Item.envVars.S);
+            } catch (e) {
+                logger.warn("Failed to parse envVars", { functionId, error: e.message });
+            }
+        }
+
         const taskPayload = {
             requestId,
             functionId,
@@ -369,7 +378,8 @@ app.post('/run', authenticate, rateLimiter, async (req, res) => {
             s3Key: Item.s3Key ? Item.s3Key.S : "",
             timeoutMs: 300000,
             input: inputData || {},
-            modelId: modelId || "llama3:8b"
+            modelId: modelId || "llama3:8b",
+            envVars: envVars
         };
 
         const sendMessageParams = {
