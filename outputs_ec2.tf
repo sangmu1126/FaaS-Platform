@@ -1,17 +1,15 @@
-output "controller_public_ip" {
-  value       = aws_eip.controller_eip.public_ip
-  description = "Static Elastic IP for Controller"
-}
+# NOTE: Controller EIP is output in controller_asg.tf
 
-# NOTE: Worker IPs are dynamic (managed by ASG)
-# Use: aws autoscaling describe-auto-scaling-instances
-# Or check AWS Console -> Auto Scaling Groups
-
+# SSH connection string uses the Controller ASG EIP
 output "ssh_connection_string_controller" {
-  value = "ssh -i faas-key-v2.pem ec2-user@${aws_eip.controller_eip.public_ip}"
+  value = "ssh -i faas-key-v2.pem ec2-user@${aws_eip.controller_asg_eip.public_ip}"
 }
 
 output "redis_endpoint" {
   value = aws_elasticache_cluster.redis.cache_nodes[0].address
 }
 
+output "api_endpoint" {
+  value       = "http://${aws_eip.controller_asg_eip.public_ip}:8080"
+  description = "Controller API endpoint"
+}
