@@ -2,9 +2,20 @@
 # Provides automatic recovery when Controller fails
 
 # 1. Launch Template for Controller
+# 1. Launch Template for Controller
+data "aws_ami" "custom_controller" {
+  most_recent = true
+  owners      = ["self"]
+
+  filter {
+    name   = "name"
+    values = ["faas-controller-v1"]
+  }
+}
+
 resource "aws_launch_template" "controller" {
   name_prefix   = "${var.project_name}-controller-"
-  image_id      = data.aws_ami.al2023.id
+  image_id      = data.aws_ami.custom_controller.id
   instance_type = "t3.micro"
   key_name      = aws_key_pair.kp.key_name
 
@@ -21,8 +32,9 @@ resource "aws_launch_template" "controller" {
     table_name      = aws_dynamodb_table.metadata_table.name
     logs_table_name = aws_dynamodb_table.logs_table.name
     redis_host      = aws_elasticache_cluster.redis.cache_nodes[0].address
-    aws_access_key  = var.aws_access_key
-    aws_secret_key  = var.aws_secret_key
+    aws_access_key    = var.aws_access_key
+    aws_secret_key    = var.aws_secret_key
+    eip_allocation_id = aws_eip.controller_asg_eip.id
   }))
 
   tag_specifications {
@@ -98,6 +110,16 @@ resource "aws_iam_role_policy" "controller_policy" {
         Effect   = "Allow"
         Action   = "ec2:AssociateAddress"
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
       }
     ]
   })
