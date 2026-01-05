@@ -84,6 +84,21 @@ let isRedisConnected = false;
 redis.on('error', (err) => { isRedisConnected = false; logger.error("Global Redis Connection Error", err); });
 redis.on('connect', () => { isRedisConnected = true; logger.info("Global Redis Connected Successfully"); });
 
+// Worker Registry for Heartbeat Push Pattern (NAT-free health check)
+const workerRegistry = new Map();
+const WORKER_TIMEOUT_MS = 30000; // 30 seconds
+
+// Clean up dead workers every 5 seconds
+setInterval(() => {
+    const now = Date.now();
+    for (const [workerId, data] of workerRegistry.entries()) {
+        if (now - data.lastSeen > WORKER_TIMEOUT_MS) {
+            logger.warn(`Worker ${workerId} marked as dead (no heartbeat for ${WORKER_TIMEOUT_MS}ms)`);
+            workerRegistry.delete(workerId);
+        }
+    }
+}, 5000);
+
 // Global Redis Subscriber
 const redisSub = new Redis({
     host: process.env.REDIS_HOST,
@@ -248,6 +263,52 @@ const upload = multer({
 app.get(['/health', '/api/health'], (req, res) => {
     const status = isRedisConnected ? 200 : 503;
     res.status(status).json({ status: isRedisConnected ? 'OK' : 'ERROR', version: VERSION });
+});
+
+// Worker Heartbeat Receiver (NAT-free health check)
+app.post('/api/worker/heartbeat', (req, res) => {
+    try {
+        const { workerId, status, pools, activeJobs, uptimeSeconds, timestamp } = req.body;
+        if (!workerId) {
+            return res.status(400).json({ error: 'workerId is required' });
+        }
+
+        workerRegistry.set(workerId, {
+            workerId,
+            status: status || 'healthy',
+            pools: pools || {},
+            activeJobs: activeJobs || 0,
+            uptimeSeconds: uptimeSeconds || 0,
+            lastSeen: Date.now(),
+            receivedAt: new Date().toISOString()
+        });
+
+        logger.info(`Heartbeat received from ${workerId}`, { activeJobs, pools });
+        res.json({ ok: true });
+    } catch (error) {
+        logger.error('Heartbeat receiver error', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Worker Status (list all known workers)
+app.get(['/api/workers', '/api/worker/status'], (req, res) => {
+    const workers = [];
+    const now = Date.now();
+
+    for (const [workerId, data] of workerRegistry.entries()) {
+        workers.push({
+            ...data,
+            healthStatus: (now - data.lastSeen) < WORKER_TIMEOUT_MS ? 'healthy' : 'unhealthy',
+            lastSeenAgo: Math.round((now - data.lastSeen) / 1000) + 's'
+        });
+    }
+
+    res.json({
+        totalWorkers: workers.length,
+        healthyWorkers: workers.filter(w => w.healthStatus === 'healthy').length,
+        workers
+    });
 });
 
 app.get(['/metrics', '/api/metrics'], async (req, res) => {
