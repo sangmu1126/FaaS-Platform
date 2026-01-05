@@ -1,28 +1,11 @@
 #!/bin/bash
-# user_data_controller.sh - Auto-provisioning for FaaS Controller
+# user_data_controller.sh - Fast Boot using Pre-baked AMI
 
-# 1. Update & Install Dependencies
-yum update -y
-curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-yum install -y git nodejs
+# 1. Associate Elastic IP (Critical for Workers)
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id ${eip_allocation_id} --region ${aws_region}
 
-# 2. Setup Application Directory
-mkdir -p /home/ec2-user/faas-controller
-chown ec2-user:ec2-user /home/ec2-user/faas-controller
-
-# 3. Clone Code (As ec2-user)
-# Note: Repo must be public OR use a token/key. Assuming public for demo or handling key separately.
-# For private repos, we usually inject a Deploy Key via Secrets Manager or UserData parameter.
-# Using the repo URL from previous context: https://github.com/sangmu1126/Infra-controller.git
-su - ec2-user -c "git clone https://github.com/sangmu1126/Infra-controller.git /home/ec2-user/faas-controller"
-
-# 4. Install NPM Dependencies
-su - ec2-user -c "cd /home/ec2-user/faas-controller && npm install"
-
-# 5. Create .env file (Injecting variables)
-# Note: In production, fetch from SSM Parameter Store. 
-# Here we will write a placeholder or expect Terraform to replace variables.
-# For simplicity in this demo, we will rely on Terraform 'templatefile' to fill this.
+# 2. Update .env file (Injecting dynamic variables)
 cat <<EOF > /home/ec2-user/faas-controller/.env
 PORT=8080
 AWS_REGION=${aws_region}
@@ -38,9 +21,10 @@ AWS_SECRET_ACCESS_KEY=${aws_secret_key}
 EOF
 chown ec2-user:ec2-user /home/ec2-user/faas-controller/.env
 
-# 6. Start Service (using PM2 for process management)
-npm install -g pm2
-su - ec2-user -c "cd /home/ec2-user/faas-controller && pm2 start controller.js --name faas-controller"
-su - ec2-user -c "pm2 save"
-pm2 startup systemd -u ec2-user --hp /home/ec2-user
-pm2 save
+# 3. Restart Application to pick up new env vars
+# Since CloudWatch Agent and App are already installed/running in AMI
+# We just need to restart the app.
+su - ec2-user -c "pm2 restart faas-controller"
+
+# 4. CloudWatch Agent is already running (chkconfig on)
+
