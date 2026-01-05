@@ -34,7 +34,7 @@ resource "aws_security_group" "redis_sg" {
 
 # 2. Subnet Group (using Private Subnets for Redis)
 resource "aws_elasticache_subnet_group" "default" {
-  name       = "${var.project_name}-redis-subnet-group"
+  name       = "${var.project_name}-redis-subnet"
   subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]
 }
 
