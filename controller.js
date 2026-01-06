@@ -354,9 +354,44 @@ app.get(['/models', '/api/models'], async (req, res) => {
 // System Status
 app.get(['/system/status', '/api/system/status'], cors(), async (req, res) => {
     try {
+        // 1. Try Aggregating from Worker Registry (Preferred for Uptime/Multi-worker)
+        let totalPools = { python: 0, nodejs: 0, cpp: 0, go: 0 };
+        let totalActiveJobs = 0;
+        let maxUptime = 0;
+        let workerCount = 0;
+
+        const now = Date.now();
+        for (const [workerId, data] of workerRegistry.entries()) {
+            // Only count healthy workers
+            if (now - data.lastSeen < WORKER_TIMEOUT_MS) {
+                workerCount++;
+                totalActiveJobs += (data.activeJobs || 0);
+                maxUptime = Math.max(maxUptime, data.uptimeSeconds || 0);
+
+                if (data.pools) {
+                    totalPools.python += (data.pools.python || 0);
+                    totalPools.nodejs += (data.pools.nodejs || 0);
+                    totalPools.cpp += (data.pools.cpp || 0);
+                    totalPools.go += (data.pools.go || 0);
+                }
+            }
+        }
+
+        if (workerCount > 0) {
+            return res.json({
+                status: "online",
+                worker_count: workerCount,
+                active_jobs: totalActiveJobs,
+                pools: totalPools,
+                uptime_seconds: maxUptime,
+                timestamp: Date.now() / 1000
+            });
+        }
+
+        // 2. Fallback to Redis System Status (Legacy/Single Worker Direct Push)
         const raw = await redis.get("system:status");
         if (!raw) {
-            // Fallback: Return empty/offline status if key doesn't exist (Worker down)
+            // Offline
             return res.json({
                 pools: { python: 0, nodejs: 0, cpp: 0, go: 0 },
                 active_jobs: 0,
@@ -366,6 +401,7 @@ app.get(['/system/status', '/api/system/status'], cors(), async (req, res) => {
         const status = JSON.parse(raw);
         status.status = "online";
         res.json(status);
+
     } catch (error) {
         logger.error("System Status Error", { error: error.message });
         res.status(500).json({ error: "Failed to fetch status" });
