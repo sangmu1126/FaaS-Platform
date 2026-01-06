@@ -14,7 +14,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100">
-      <Sidebar onSystemStatusClick={() => { }} />
+      <Sidebar systemStatus={null} onSystemStatusClick={() => { }} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
