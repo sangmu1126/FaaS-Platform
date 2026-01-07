@@ -271,6 +271,16 @@ app.get(['/health', '/api/health'], (req, res) => {
     res.status(status).json({ status: isRedisConnected ? 'OK' : 'ERROR', version: VERSION });
 });
 
+// Prometheus Metrics Endpoint
+app.get(['/metrics', '/api/metrics'], async (req, res) => {
+    try {
+        res.set('Content-Type', register.contentType);
+        res.end(await register.metrics());
+    } catch (err) {
+        res.status(500).end(err.message);
+    }
+});
+
 // Worker Heartbeat Receiver (NAT-free health check)
 app.post('/api/worker/heartbeat', (req, res) => {
     try {
