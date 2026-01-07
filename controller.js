@@ -125,6 +125,12 @@ redisSub.on('pmessage', (pattern, channel, message) => {
         if (requestId) {
             responseEmitter.emit(requestId, message);
 
+            // Store job result for async polling (GET /status/:jobId)
+            // TTL: 1 hour (3600 seconds)
+            redis.set(`job:${requestId}`, message, 'EX', 3600).catch(err => {
+                logger.error("Failed to store job result in Redis", err);
+            });
+
             // Persist execution log
             try {
                 // Safe JSON Parse
