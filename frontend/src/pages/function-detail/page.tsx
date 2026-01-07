@@ -46,23 +46,32 @@ export default function FunctionDetailPage() {
           return [];
         });
 
-        // Metrics not available in this version
-        const [fnData, logsData] = await Promise.all([fnRequest, logsRequest]);
+        // Fetch real metrics from backend API
+        const metricsRequest = functionApi.getMetrics(id).catch(err => {
+          console.warn('Failed to load metrics:', err);
+          return null;
+        });
 
-        // Calculate real metrics
-        const totalExecutions = fnData?.invocations || 0;
+        const [fnData, logsData, metricsData] = await Promise.all([fnRequest, logsRequest, metricsRequest]);
+
+        // Use backend metrics if available, else calculate from logs
         const validLogs = logsData || [];
         const errorLogs = validLogs.filter((l: any) => l.level === 'error').length;
-        const recentErrorRate = validLogs.length > 0 ? (errorLogs / validLogs.length) : 0;
+        const successLogs = validLogs.length - errorLogs;
 
         const uiMetrics = {
-          invocations: totalExecutions,
-          avgDuration: 0,
-          coldStarts: 0,
-          successRate: ((1 - recentErrorRate) * 100).toFixed(2),
-          successCount: Math.round(totalExecutions * (1 - recentErrorRate)),
-          errorCount: Math.round(totalExecutions * recentErrorRate),
-          memory: fnData?.memory || 128
+          invocations: metricsData?.invocations ?? fnData?.invocations ?? 0,
+          avgDuration: metricsData?.avgDuration ?? 0,
+          coldStarts: metricsData?.coldStarts ?? 0,
+          errors: metricsData?.errors ?? errorLogs,
+          successRate: metricsData?.successRate ?? (validLogs.length > 0
+            ? ((successLogs / validLogs.length) * 100).toFixed(2)
+            : '100.00'),
+          successCount: metricsData?.invocations
+            ? Math.round((metricsData.invocations || 0) - (metricsData.errors || 0))
+            : successLogs,
+          errorCount: metricsData?.errors ?? errorLogs,
+          memory: fnData?.memory || fnData?.memoryMb || 128
         };
 
         setFunctionItem(fnData);
