@@ -203,5 +203,149 @@ export const proxyService = {
             };
         }
         return { status: 'unknown' };
+    },
+
+    // Parse Prometheus text format and extract metrics
+    parsePrometheusMetrics(text, functionId = null) {
+        const lines = text.split('\n');
+        const metrics = {
+            global: {
+                totalInvocations: 0,
+                totalDurationSum: 0,
+                totalDurationCount: 0,
+                errorCount: 0
+            },
+            byFunction: {}
+        };
+
+        lines.forEach(line => {
+            if (line.startsWith('#') || !line.trim()) return;
+
+            // Parse function_invocations_total{functionId="...",status="..."}
+            const invMatch = line.match(/function_invocations_total\{functionId="([^"]+)"(?:,status="([^"]+)")?\}\s+([\d.]+)/);
+            if (invMatch) {
+                const fid = invMatch[1];
+                const status = invMatch[2] || 'SUCCESS';
+                const count = parseFloat(invMatch[3]);
+
+                if (!metrics.byFunction[fid]) {
+                    metrics.byFunction[fid] = { invocations: 0, durationSum: 0, durationCount: 0, errors: 0 };
+                }
+                metrics.byFunction[fid].invocations += count;
+                metrics.global.totalInvocations += count;
+
+                if (status === 'ERROR') {
+                    metrics.byFunction[fid].errors += count;
+                    metrics.global.errorCount += count;
+                }
+            }
+
+            // Parse function_duration_seconds_sum{functionId="..."}
+            const durSumMatch = line.match(/function_duration_seconds_sum\{functionId="([^"]+)"[^}]*\}\s+([\d.]+)/);
+            if (durSumMatch) {
+                const fid = durSumMatch[1];
+                const sum = parseFloat(durSumMatch[2]);
+
+                if (!metrics.byFunction[fid]) {
+                    metrics.byFunction[fid] = { invocations: 0, durationSum: 0, durationCount: 0, errors: 0 };
+                }
+                metrics.byFunction[fid].durationSum += sum;
+                metrics.global.totalDurationSum += sum;
+            }
+
+            // Parse function_duration_seconds_count{functionId="..."}
+            const durCountMatch = line.match(/function_duration_seconds_count\{functionId="([^"]+)"[^}]*\}\s+([\d.]+)/);
+            if (durCountMatch) {
+                const fid = durCountMatch[1];
+                const count = parseFloat(durCountMatch[2]);
+
+                if (!metrics.byFunction[fid]) {
+                    metrics.byFunction[fid] = { invocations: 0, durationSum: 0, durationCount: 0, errors: 0 };
+                }
+                metrics.byFunction[fid].durationCount += count;
+                metrics.global.totalDurationCount += count;
+            }
+
+            // Fallback: Parse http_request_duration_seconds for /run endpoint
+            // This captures average function execution time from HTTP request duration
+            const httpDurSumMatch = line.match(/http_request_duration_seconds_sum\{[^}]*route="\/run[^"]*"[^}]*status_code="200"\}\s+([\d.]+)/);
+            if (httpDurSumMatch && metrics.global.totalDurationSum === 0) {
+                metrics.global.totalDurationSum += parseFloat(httpDurSumMatch[1]);
+            }
+
+            const httpDurCountMatch = line.match(/http_request_duration_seconds_count\{[^}]*route="\/run[^"]*"[^}]*status_code="200"\}\s+([\d.]+)/);
+            if (httpDurCountMatch && metrics.global.totalDurationCount === 0) {
+                metrics.global.totalDurationCount += parseFloat(httpDurCountMatch[1]);
+            }
+        });
+
+        // If functionId specified, return that function's metrics
+        if (functionId && metrics.byFunction[functionId]) {
+            const fn = metrics.byFunction[functionId];
+            const avgDurationMs = fn.durationCount > 0 ? (fn.durationSum / fn.durationCount) * 1000 : 0;
+            const successRate = fn.invocations > 0 ? ((fn.invocations - fn.errors) / fn.invocations) * 100 : 100;
+
+            return {
+                invocations: fn.invocations,
+                avgDuration: Math.round(avgDurationMs),
+                errors: fn.errors,
+                successRate: Math.round(successRate * 100) / 100
+            };
+        }
+
+        // Return global metrics with per-function breakdown
+        const avgDurationMs = metrics.global.totalDurationCount > 0
+            ? (metrics.global.totalDurationSum / metrics.global.totalDurationCount) * 1000
+            : 0;
+        const successRate = metrics.global.totalInvocations > 0
+            ? ((metrics.global.totalInvocations - metrics.global.errorCount) / metrics.global.totalInvocations) * 100
+            : 100;
+
+        return {
+            totalInvocations: metrics.global.totalInvocations,
+            avgDuration: Math.round(avgDurationMs),
+            errorCount: metrics.global.errorCount,
+            successRate: Math.round(successRate * 100) / 100,
+            byFunction: Object.entries(metrics.byFunction).map(([fid, data]) => ({
+                functionId: fid,
+                invocations: data.invocations,
+                avgDuration: data.durationCount > 0 ? Math.round((data.durationSum / data.durationCount) * 1000) : 0,
+                errors: data.errors,
+                successRate: data.invocations > 0 ? Math.round(((data.invocations - data.errors) / data.invocations) * 10000) / 100 : 100
+            }))
+        };
+    },
+
+    // Get parsed metrics for a specific function from Prometheus
+    async getPrometheusMetricsForFunction(functionId) {
+        try {
+            const promText = await this.fetchRaw('/metrics');
+            return this.parsePrometheusMetrics(promText, functionId);
+        } catch (e) {
+            logger.warn('Failed to fetch Prometheus metrics', { error: e.message });
+            return {
+                invocations: 0,
+                avgDuration: 0,
+                errors: 0,
+                successRate: 100
+            };
+        }
+    },
+
+    // Get all parsed Prometheus metrics
+    async getAllPrometheusMetrics() {
+        try {
+            const promText = await this.fetchRaw('/metrics');
+            return this.parsePrometheusMetrics(promText);
+        } catch (e) {
+            logger.warn('Failed to fetch Prometheus metrics', { error: e.message });
+            return {
+                totalInvocations: 0,
+                avgDuration: 0,
+                errorCount: 0,
+                successRate: 100,
+                byFunction: []
+            };
+        }
     }
 };
