@@ -534,7 +534,7 @@ app.post(['/run', '/api/run'], authenticate, rateLimiter, async (req, res) => {
     }
 });
 
-app.get('/status/:jobId', authenticate, async (req, res) => {
+app.get(['/status/:jobId', '/api/status/:jobId'], authenticate, async (req, res) => {
     try {
         const result = await redis.get(`job:${req.params.jobId}`);
         if (!result) return res.json({ status: "pending", message: "Running or not found" });
