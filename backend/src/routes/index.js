@@ -8,6 +8,7 @@ const upload = multer({ storage: multer.memoryStorage() }); // In-memory for pro
 // Functions
 router.get('/functions', gatewayController.listFunctions);
 router.get('/functions/:id', gatewayController.getFunctionDetail);
+router.get('/functions/:id/logs', gatewayController.getFunctionLogs);
 router.get('/functions/:id/metrics', gatewayController.getMetrics);
 router.put('/functions/:id', gatewayController.updateFunction);
 router.delete('/functions/:id', gatewayController.deleteFunction);

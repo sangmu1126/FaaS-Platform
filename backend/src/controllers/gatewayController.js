@@ -148,6 +148,16 @@ export const gatewayController = {
         }
     },
 
+    // GET /functions/:id/logs
+    async getFunctionLogs(req, res) {
+        try {
+            const logs = await proxyService.fetch(`/functions/${req.params.id}/logs`);
+            res.json(logs);
+        } catch (error) {
+            res.status(500).json({ error: error.message });
+        }
+    },
+
     // GET /functions/:id
     async getFunctionDetail(req, res) {
         try {
