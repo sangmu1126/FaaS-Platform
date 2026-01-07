@@ -193,6 +193,16 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                         exitCode: result.exitCode
                     }
                 );
+
+                // Observe Prometheus Metrics
+                try {
+                    const durationSec = duration / 1000;
+                    functionDuration.observe({ functionId: result.functionId, status: result.status }, durationSec);
+                    functionInvocations.inc({ functionId: result.functionId, status: result.status });
+                } catch (e) {
+                    console.error("Failed to observe metrics", e);
+                }
+
             } catch (e) {
                 console.error("Failed to add log in subscriber", e);
             }
@@ -240,6 +250,22 @@ const httpRequestDurationMicroseconds = new client.Histogram({
     buckets: [0.1, 0.5, 1, 2, 5]
 });
 register.registerMetric(httpRequestDurationMicroseconds);
+
+// Function Execution Metrics
+const functionDuration = new client.Histogram({
+    name: 'function_duration_seconds',
+    help: 'Duration of Function Execution in seconds',
+    labelNames: ['functionId', 'status'],
+    buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30]
+});
+register.registerMetric(functionDuration);
+
+const functionInvocations = new client.Counter({
+    name: 'function_invocations_total',
+    help: 'Total number of function invocations',
+    labelNames: ['functionId', 'status']
+});
+register.registerMetric(functionInvocations);
 
 app.use((req, res, next) => {
     const end = httpRequestDurationMicroseconds.startTimer();
