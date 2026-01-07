@@ -190,20 +190,18 @@ export const proxyService = {
 
     // GET Worker Health Check
     async fetchWorkerHealth() {
-        // Use worker health URL (port 8001)
-        const workerUrl = config.workerHealthUrl || config.awsAlbUrl.replace(':8080', ':8001');
-        const targetUrl = `${workerUrl}/health`;
+        // Now we fetch status from Controller which aggregates worker heartbeats
+        const status = await this.fetch('/system/status');
 
-        const { statusCode, body } = await request(targetUrl, {
-            method: 'GET',
-            headersTimeout: 5000,
-            bodyTimeout: 5000
-        });
-
-        if (statusCode >= 400) {
-            throw new Error(`Worker returned ${statusCode}`);
+        // Transform to expected format if needed, or just return
+        if (status && status.worker) {
+            return {
+                status: status.worker.count > 0 ? 'online' : 'degraded',
+                uptime_seconds: status.uptime,
+                active_workers: status.worker.count,
+                pools: status.worker.pools
+            };
         }
-
-        return await body.json();
+        return { status: 'unknown' };
     }
 };
