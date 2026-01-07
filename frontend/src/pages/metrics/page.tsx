@@ -99,8 +99,26 @@ export default function MetricsPage() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // Fetch Prometheus metrics
+                // Fetch dashboard stats (includes Prometheus-based metrics and byFunction breakdown)
+                let dashboardStats: any = null;
                 try {
+                    dashboardStats = await functionApi.getDashboardStats();
+                    if (dashboardStats) {
+                        setTotalStats(prev => ({
+                            ...prev,
+                            totalInvocations: dashboardStats.totalExecutions || 0,
+                            avgResponseTime: dashboardStats.avgResponseTime || 0,
+                            successRate: dashboardStats.successRate || 100
+                        }));
+                        setPrometheusData({
+                            totalRequests: dashboardStats.totalExecutions || 0,
+                            avgDuration: dashboardStats.avgResponseTime || 0,
+                            errorRate: dashboardStats.successRate || 100
+                        });
+                    }
+                } catch (statsErr) {
+                    console.warn('Dashboard stats not available, fetching Prometheus directly');
+                    // Fallback to direct Prometheus fetch
                     const promRes = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/metrics/prometheus`);
                     if (promRes.ok) {
                         const promText = await promRes.text();
@@ -112,28 +130,39 @@ export default function MetricsPage() {
                             successRate: parsed.errorRate || prev.successRate
                         }));
                     }
-                } catch (promErr) {
-                    console.warn('Prometheus metrics not available, using fallback');
                 }
 
-                // Get functions for metrics
+                // Get functions for display
                 const functions = await functionApi.getFunctions();
 
-                // Calculate function metrics - stable values (no random)
-                const metrics: FunctionMetric[] = functions.map((fn: any) => ({
-                    name: fn.name || 'Unknown',
-                    invocations: fn.invocations || 0,
-                    avgDuration: prometheusData.avgDuration || 0,
-                    successRate: prometheusData.errorRate || 100
-                }));
+                // Use byFunction data from dashboard stats if available
+                const byFunctionMap = new Map<string, any>();
+                if (dashboardStats?.byFunction && Array.isArray(dashboardStats.byFunction)) {
+                    dashboardStats.byFunction.forEach((f: any) => {
+                        byFunctionMap.set(f.functionId, f);
+                    });
+                }
+
+                // Build function metrics with real data
+                const metrics: FunctionMetric[] = functions.map((fn: any) => {
+                    const fid = fn.functionId || fn.id;
+                    const fnMetric = byFunctionMap.get(fid);
+                    // Use local_stats.calls from function list as fallback for invocations
+                    const localInvocations = fn.local_stats?.calls || fn.invocations || 0;
+                    return {
+                        name: fn.name || fid || 'Unknown',
+                        invocations: fnMetric?.invocations ?? localInvocations,
+                        avgDuration: fnMetric?.avgDuration ?? 0,
+                        successRate: fnMetric?.successRate ?? 100
+                    };
+                });
                 setFunctionMetrics(metrics.sort((a, b) => b.invocations - a.invocations));
 
-                // Calculate totals
+                // Calculate totals from function metrics
                 const total = metrics.reduce((acc, fn) => acc + fn.invocations, 0);
-
                 setTotalStats(prev => ({
                     ...prev,
-                    totalInvocations: total,
+                    totalInvocations: dashboardStats?.totalExecutions || total,
                 }));
 
                 // Real-time Time Series Accumulation obtained from latest fetch
