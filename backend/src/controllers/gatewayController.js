@@ -249,7 +249,12 @@ export const gatewayController = {
                 worker = { status: 'offline', error: e.message };
             }
 
-            res.json({ gateway, worker });
+            res.json({
+                status: gateway.status,
+                uptime_seconds: gateway.uptime,
+                gateway,
+                worker
+            });
         } catch (error) {
             logger.error('Get System Status Error', error);
             res.status(500).json({ error: error.message });
