@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from 'recharts';
 
 import { functionApi } from '../../services/functionApi';
 import { logApi } from '../../services/logApi';
@@ -29,6 +32,8 @@ export default function FunctionDetailPage() {
   const [metrics, setMetrics] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [timeSeriesData, setTimeSeriesData] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadData() {
@@ -52,7 +57,15 @@ export default function FunctionDetailPage() {
           return null;
         });
 
-        const [fnData, logsData, metricsData] = await Promise.all([fnRequest, logsRequest, metricsRequest]);
+        // Fetch system status for Warm Pool data
+        const systemRequest = fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`)
+          .then(res => res.json())
+          .catch(err => {
+            console.warn('Failed to load system status:', err);
+            return null;
+          });
+
+        const [fnData, logsData, metricsData, sysData] = await Promise.all([fnRequest, logsRequest, metricsRequest, systemRequest]);
 
         // Use backend metrics if available, else calculate from logs
         const validLogs = logsData || [];
@@ -71,12 +84,45 @@ export default function FunctionDetailPage() {
             ? Math.round((metricsData.invocations || 0) - (metricsData.errors || 0))
             : successLogs,
           errorCount: metricsData?.errors ?? errorLogs,
-          memory: fnData?.memory || fnData?.memoryMb || 128
+          memory: fnData?.memory || fnData?.memoryMb || 128,
+          // Include recent executions for time-series
+          recentExecutions: metricsData?.recentExecutions || []
         };
+
+        // Generate time-series data from recent executions
+        const executions = metricsData?.recentExecutions || [];
+        if (executions.length > 0) {
+          // Group by minute and create time-series
+          const timeMap = new Map<string, { count: number; totalDuration: number }>();
+
+          executions.forEach((exec: any) => {
+            if (!exec.timestamp) return;
+            const date = new Date(exec.timestamp);
+            const timeKey = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+
+            if (!timeMap.has(timeKey)) {
+              timeMap.set(timeKey, { count: 0, totalDuration: 0 });
+            }
+            const entry = timeMap.get(timeKey)!;
+            entry.count += 1;
+            entry.totalDuration += exec.duration || 0;
+          });
+
+          const tsData = Array.from(timeMap.entries())
+            .map(([time, data]) => ({
+              time,
+              invocations: data.count,
+              avgDuration: data.count > 0 ? Math.round(data.totalDuration / data.count) : 0
+            }))
+            .sort((a, b) => a.time.localeCompare(b.time));
+
+          setTimeSeriesData(tsData);
+        }
 
         setFunctionItem(fnData);
         setMetrics(uiMetrics);
         setLogs(validLogs);
+        setSystemStatus(sysData);
       } catch (error) {
         console.error('Failed to load function details:', error);
       } finally {
@@ -660,11 +706,31 @@ export default function FunctionDetailPage() {
                       <h3 className="text-lg font-bold text-gray-900">실행 횟수</h3>
                       <i className="ri-bar-chart-line text-2xl text-blue-600"></i>
                     </div>
-                    <div className="h-64 flex items-center justify-center text-gray-400 text-sm bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
-                      <div className="text-center">
-                        <i className="ri-bar-chart-box-line text-3xl mb-2 block opacity-50"></i>
-                        시간별 데이터 수집 중...
-                      </div>
+                    <div className="h-64">
+                      {timeSeriesData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={timeSeriesData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                            <XAxis dataKey="time" tick={{ fontSize: 12 }} stroke="#9CA3AF" />
+                            <YAxis tick={{ fontSize: 12 }} stroke="#9CA3AF" allowDecimals={false} />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: 'rgba(255,255,255,0.95)',
+                                borderRadius: '12px',
+                                border: '1px solid #E5E7EB'
+                              }}
+                            />
+                            <Bar dataKey="invocations" fill="#3B82F6" radius={[4, 4, 0, 0]} name="실행 횟수" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-gray-400 text-sm bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+                          <div className="text-center">
+                            <i className="ri-bar-chart-box-line text-3xl mb-2 block opacity-50"></i>
+                            실행 데이터가 없습니다
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -674,11 +740,39 @@ export default function FunctionDetailPage() {
                       <h3 className="text-lg font-bold text-gray-900">응답 시간</h3>
                       <i className="ri-time-line text-2xl text-green-600"></i>
                     </div>
-                    <div className="h-64 flex items-center justify-center text-gray-400 text-sm bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
-                      <div className="text-center">
-                        <i className="ri-timer-flash-line text-3xl mb-2 block opacity-50"></i>
-                        시간별 데이터 수집 중...
-                      </div>
+                    <div className="h-64">
+                      {timeSeriesData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={timeSeriesData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                            <XAxis dataKey="time" tick={{ fontSize: 12 }} stroke="#9CA3AF" />
+                            <YAxis tick={{ fontSize: 12 }} stroke="#9CA3AF" unit="ms" />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: 'rgba(255,255,255,0.95)',
+                                borderRadius: '12px',
+                                border: '1px solid #E5E7EB'
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="avgDuration"
+                              stroke="#10B981"
+                              strokeWidth={2}
+                              dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
+                              activeDot={{ r: 6, fill: '#059669' }}
+                              name="평균 응답 시간 (ms)"
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-gray-400 text-sm bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+                          <div className="text-center">
+                            <i className="ri-timer-flash-line text-3xl mb-2 block opacity-50"></i>
+                            실행 데이터가 없습니다
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -736,17 +830,31 @@ export default function FunctionDetailPage() {
                       </div>
                       <div>
                         <div className="text-sm text-gray-600">Cold Start</div>
-                        <div className="text-2xl font-bold text-gray-900">0 ms</div>
+                        <div className="text-2xl font-bold text-gray-900">
+                          {systemStatus?.pools ? '0 ms' : 'N/A'}
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Warm Pool</span>
-                        <span className="font-medium text-green-600">활성</span>
+                        <span className={`font-medium ${systemStatus?.pools ? 'text-green-600' : 'text-gray-400'}`}>
+                          {systemStatus?.pools ? '활성' : '확인 중...'}
+                        </span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">대기 인스턴스</span>
-                        <span className="font-medium text-gray-900">3개</span>
+                        <span className="font-medium text-gray-900">
+                          {(() => {
+                            if (!systemStatus?.pools) return '-';
+                            const runtime = functionItem?.runtime || '';
+                            const runtimeKey = runtime.split(':')[0].toLowerCase();
+                            const poolCount = systemStatus.pools[runtimeKey] ||
+                              systemStatus.pools[runtime] ||
+                              Object.values(systemStatus.pools).reduce((a: number, b: any) => a + b, 0);
+                            return `${poolCount}개`;
+                          })()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -755,26 +863,59 @@ export default function FunctionDetailPage() {
                 {/* Cost Analysis */}
                 <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
                   <h3 className="text-lg font-bold text-gray-900 mb-4">비용 분석</h3>
-                  <div className="grid md:grid-cols-4 gap-4">
-                    <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-gray-50 rounded-xl border border-gray-200">
-                      <div className="text-sm text-gray-600 mb-1">이번 달 (추정)</div>
-                      <div className="text-2xl font-bold text-gray-900">
-                        ${((metrics?.invocations || 0) * 0.00001667).toFixed(4)}
+                  {(() => {
+                    // AWS Lambda 가격 기준 계산
+                    const costPerRequest = 0.0000002; // $0.20 per 1M requests
+                    const costPerGbSecond = 0.0000166667; // per GB-second
+
+                    const invocations = metrics?.invocations || 0;
+                    const memoryMb = metrics?.memory || 128;
+                    const memoryGb = memoryMb / 1024;
+                    const avgDurationSec = (metrics?.avgDuration || 0) / 1000;
+
+                    // 이번 달 비용
+                    const requestCost = invocations * costPerRequest;
+                    const computeCost = invocations * avgDurationSec * memoryGb * costPerGbSecond;
+                    const currentCost = requestCost + computeCost;
+
+                    // 최적화 전 비용 시뮬레이션 (메모리 512MB 가정)
+                    const oldMemoryGb = 512 / 1024;
+                    const oldComputeCost = invocations * avgDurationSec * oldMemoryGb * costPerGbSecond;
+                    const oldCost = requestCost + oldComputeCost;
+
+                    // 절감액/절감률
+                    const savings = oldCost - currentCost;
+                    const savingsPercent = oldCost > 0 ? ((savings / oldCost) * 100) : 0;
+
+                    return (
+                      <div className="grid md:grid-cols-4 gap-4">
+                        <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-gray-50 rounded-xl border border-gray-200">
+                          <div className="text-sm text-gray-600 mb-1">이번 달 (추정)</div>
+                          <div className="text-2xl font-bold text-gray-900">
+                            ${currentCost.toFixed(6)}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            요청: ${requestCost.toFixed(6)} + 컴퓨팅: ${computeCost.toFixed(6)}
+                          </div>
+                        </div>
+                        <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-gray-200">
+                          <div className="text-sm text-gray-600 mb-1">최적화 전 비용</div>
+                          <div className="text-2xl font-bold text-gray-500">${oldCost.toFixed(6)}</div>
+                          <div className="text-xs text-gray-500 mt-1">512MB 기준</div>
+                        </div>
+                        <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
+                          <div className="text-sm text-gray-600 mb-1">절감액</div>
+                          <div className="text-2xl font-bold text-green-600">${savings.toFixed(6)}</div>
+                          <div className="text-xs text-green-600 mt-1">메모리 최적화 효과</div>
+                        </div>
+                        <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
+                          <div className="text-sm text-gray-600 mb-1">절감률</div>
+                          <div className="text-2xl font-bold text-green-600">{savingsPercent.toFixed(1)}%</div>
+                          <div className="text-xs text-green-600 mt-1">{memoryMb}MB로 최적화</div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-gray-200">
-                      <div className="text-sm text-gray-600 mb-1">지난 달</div>
-                      <div className="text-2xl font-bold text-gray-900">$0.00</div>
-                    </div>
-                    <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
-                      <div className="text-sm text-gray-600 mb-1">절감액</div>
-                      <div className="text-2xl font-bold text-green-600">$0.00</div>
-                    </div>
-                    <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
-                      <div className="text-sm text-gray-600 mb-1">절감률</div>
-                      <div className="text-2xl font-bold text-green-600">0.0%</div>
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
