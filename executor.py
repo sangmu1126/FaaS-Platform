@@ -105,20 +105,42 @@ class TaskExecutor:
             cmd, env_vars = self._build_command(task, use_payload_file)
             
             # Execute with Timeout
-            start_io = self.containers.get_io_bytes(container.id)
+            # Execute with Timeout
             self.containers.reset_cgroup_peak(container.id)
+            
+            start_cpu = self.containers.get_cgroup_cpu_usage(container.id)
+            start_rx, start_tx = self.containers.get_network_stats(container)
+            start_dr, start_dw = self.containers.get_disk_stats(container.id)
             
             exit_code, output_bytes = self._execute_in_container(container, cmd, env_vars, task.timeout_ms, host_output_dir)
             
             # Metrics & Cleanup
-            end_io = self.containers.get_io_bytes(container.id)
+            end_cpu = self.containers.get_cgroup_cpu_usage(container.id)
+            end_rx, end_tx = self.containers.get_network_stats(container)
+            end_dr, end_dw = self.containers.get_disk_stats(container.id)
             peak_memory = self.containers.get_cgroup_memory_peak(container.id)
             
             output_str = output_bytes.decode('utf-8', errors='replace')
             duration_ms = int((time.time() - start_time) * 1000)
             
+            # Calculate Deltas
+            cpu_usage_us = max(0, end_cpu - start_cpu)
+            net_rx = max(0, end_rx - start_rx)
+            net_tx = max(0, end_tx - start_tx)
+            disk_r = max(0, end_dr - start_dr)
+            disk_w = max(0, end_dw - start_dw)
+            
             # Analysis
-            tip, savings = self.metrics.analyze_execution(peak_memory, task.memory_mb, end_io - start_io)
+            metrics_data = {
+                "peak_memory": peak_memory,
+                "allocated_mb": task.memory_mb,
+                "duration_ms": duration_ms,
+                "cpu_usage": cpu_usage_us,
+                "network_bytes": net_rx + net_tx,
+                "disk_bytes": disk_r + disk_w
+            }
+            
+            tip, savings, rec_mb = self.metrics.analyze_execution(metrics_data)
             
             # Retrieve Output Files
             self.containers.copy_from_container(container, "/output", host_output_dir)
@@ -130,6 +152,8 @@ class TaskExecutor:
             self._trigger_background_reporting(
                 task, peak_memory, host_output_dir, host_work_dir
             )
+
+            cpu_util = (cpu_usage_us / 1000.0) / duration_ms if duration_ms > 0 else 0
 
             return ExecutionResult(
                 request_id=task.request_id,
@@ -144,6 +168,12 @@ class TaskExecutor:
                 allocated_memory_mb=task.memory_mb,
                 optimization_tip=tip,
                 estimated_savings=savings,
+                recommended_memory_mb=rec_mb,
+                cpu_usage=cpu_util,
+                network_rx=net_rx,
+                network_tx=net_tx,
+                disk_read=disk_r,
+                disk_write=disk_w,
                 output_files=[f.name for f in host_output_dir.glob("*")],
                 llm_token_count=llm_tokens
             )
