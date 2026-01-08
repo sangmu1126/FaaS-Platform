@@ -27,22 +27,23 @@ It now supports **Dynamic Resource Resizing**, allowing users and Auto-Tuners to
 
 ```mermaid
 graph LR
-    User[Client / CLI] -- "x-api-key" --> ALB[Load Balancer]
-    ALB -- Port 8080 --> Control[⚡ Controller]
+    User[Client] -- "x-api-key" --> ALB[Load Balancer]
+    ALB -- Port 8080 --> Controller[Node.js Controller]
     
-    subgraph "Control Plane"
-        Control -- "1. Auth & Rate Limit" --> Redis[(Redis Cluster)]
-        Control -- "2. Metadata / Logs" --> DDB[DynamoDB]
-        Control -- "3. Enqueue Job" --> SQS[AWS SQS]
+    subgraph "Control Plane (Infra)"
+    Controller -- "1. Upload (Zip)" --> S3[AWS S3]
+    Controller -- "2. Metadata" --> DDB[DynamoDB]
+    Controller -- "3. Rate Limit" --> Redis[(Redis Cluster)]
+    Controller -- "4. Enqueue Job" --> SQS[AWS SQS]
+    
+    Controller -.-> Prom[Prometheus]
+    Controller -.-> AINode[AI Node / Ollama]
     end
 
-    subgraph "Worker Plane"
-        SQS --> Worker[Worker Fleet]
-        Worker -- "4. Pub Result" --> Redis
-    end
-    
-    Redis -- "5. Push Result" --> Control
-    Control --> User
+    SQS --> Worker[Worker Nodes]
+    Worker -- "5. Result Pub" --> Redis
+    Redis -- "6. Sub/Result" --> Controller
+    Controller --> User
 ```
 
 ---
