@@ -3,7 +3,7 @@
 <div align="center">
 
 ![Terraform](https://img.shields.io/badge/Terraform-1.0%2B-623CE4?style=for-the-badge&logo=terraform&logoColor=white)
-![AWS](https://img.shields.io/badge/AWS-VPC%20%7C%20ASG%20%7C%20Lambda-FF9900?style=for-the-badge&logo=amazonaws&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-VPC%20%7C%20ASG%20%7C%20EC2-FF9900?style=for-the-badge&logo=amazonaws&logoColor=white)
 ![Architecture](https://img.shields.io/badge/Architecture-Serverless-blue?style=for-the-badge&logo=amazonflow&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
