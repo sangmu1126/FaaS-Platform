@@ -211,3 +211,64 @@ class ContainerManager:
             temp_tar.unlink()
         except Exception as e:
             logger.warning("Failed to copy from container", error=str(e))
+
+    def get_cgroup_cpu_usage(self, container_id: str) -> int:
+        """Returns CPU usage in microseconds from cgroup v2"""
+        try:
+            path = config.CGROUP_PATH_CPU_STAT.format(container_id=container_id)
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    for line in f:
+                        if line.startswith("usage_usec"):
+                            return int(line.split()[1])
+        except Exception: pass
+        return 0
+
+    def get_network_stats(self, container) -> tuple:
+        """Returns (rx_bytes, tx_bytes) from /proc/{pid}/net/dev"""
+        try:
+            # Refresh to ensure we have the PID
+            if 'State' not in container.attrs or 'Pid' not in container.attrs['State'] or container.attrs['State']['Pid'] == 0:
+                 container.reload()
+            
+            pid = container.attrs['State']['Pid']
+            rx = 0
+            tx = 0
+            path = f"/proc/{pid}/net/dev"
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    lines = f.readlines()
+                    for line in lines[2:]:
+                        data = line.strip().split()
+                        # face |bytes packets errs...
+                        # eth0: 1234 ...
+                        # If interface name is fused with bytes (eth0:123), logic needs care.
+                        # Linux /proc/net/dev output:
+                        # eth0: 123 456 ...
+                        # split() handles multiple spaces.
+                        # Part 0 is "eth0:" or "eth0". Part 1 is bytes.
+                        parts = line.replace(':', ' ').split()
+                        if parts[0].startswith("eth"):
+                            rx += int(parts[1])
+                            tx += int(parts[9])
+            return rx, tx
+        except Exception as e:
+            # logger.warning("Network stat failed", error=str(e))
+            return 0, 0
+
+    def get_disk_stats(self, container_id: str) -> tuple:
+        """Returns (read_bytes, write_bytes) from io.stat"""
+        try:
+            path = config.CGROUP_PATH_IO_STAT.format(container_id=container_id)
+            read_b = 0
+            write_b = 0
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    for line in f:
+                        parts = line.split()
+                        for p in parts:
+                            if p.startswith("r="): read_b += int(p.split("=")[1])
+                            elif p.startswith("w="): write_b += int(p.split("=")[1])
+            return read_b, write_b
+        except Exception:
+            return 0, 0
