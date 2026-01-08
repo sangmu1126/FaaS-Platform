@@ -30,37 +30,28 @@ The Worker Agent sits at the heart of the execution plane, bridging AWS infrastr
 
 ```mermaid
 flowchart TD
-    subgraph Cloud["AWS Cloud Infrastructure"]
-        SQS[AWS SQS] -->|"Push Task"| Agent
-        S3[S3 Bucket] -->|"Fetch Code"| Agent
+    subgraph "AWS Cloud"
+        SQS[AWS SQS Queue] -->|"1. Long Polling"| Agent["WorkerAgent (Worker)"]
+        S3_Code["S3 Bucket (Code)"] -->|"2. Download Code"| Agent
     end
 
-    subgraph Worker["Worker Node (EC2)"]
-        direction TB
-        Agent["🚀 WorkerAgent"]
+    subgraph "Worker Node"
+        Agent -->|"3. Acquire Container"| WarmPool[Warm Pool]
+        WarmPool -->|"4. Execute"| Container[Docker Container]
         
-        subgraph Engine["Execution Engine"]
-            Executor[Task Executor]
-            Pool[Warm Pool]
-            Tuner["🧠 Auto-Tuner"]
-        end
-
-        subgraph Runtime["Docker Isolation"]
-            Container["Container (Python/Node/Go)"]
-            Cgroups["Cgroups v2 (Resource Stats)"]
+        subgraph "Docker Environment"
+            Container -->|"5. Run Code"| Runtime["Runtime (Python/Node/C++/Go)"]
         end
         
-        Agent --> Executor
-        Executor --> Pool
-        Pool -->|"Acquire"| Container
-        Cgroups -.->|"Profile"| Tuner
-        Tuner -.->|"Optimize"| Agent
+        Runtime -->|"6. Logs & Output"| Agent
+        Agent -->|"7. Analyze Memory"| AutoTuner[AutoTuner]
     end
 
-    subgraph Output["Observability & Feedback"]
-        Agent -->|"Log Stream"| S3Out[S3 Output]
-        Agent -->|"Pub/Sub"| Redis
-        Agent -->|"Metrics"| Prom[Prometheus]
+    subgraph "Data & Monitoring"
+        Agent -->|"8. Pub/Sub Result"| Redis[Redis]
+        Agent -->|"9. Upload Output"| S3_Out["S3 Bucket (Output)"]
+        Agent -->|"10. Metrics"| Prometheus[Prometheus]
+        Agent -->|"11. CloudWatch"| CW[CloudWatch]
     end
 ```
 
