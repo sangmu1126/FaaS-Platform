@@ -5,6 +5,10 @@
 INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id ${eip_allocation_id} --region ${aws_region}
 
+# 1.5. Publish Private IP to SSM for Workers
+PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+aws ssm put-parameter --name "/faas/controller/private_ip" --value "$PRIVATE_IP" --type "String" --overwrite --region ${aws_region}
+
 # 2. Update .env file (Injecting dynamic variables)
 cat <<EOF > /home/ec2-user/faas-controller/.env
 PORT=8080
