@@ -200,7 +200,8 @@ export default function MetricsPage() {
                     { name: 'Python', count: distribution['python'] || 0, color: '#3B82F6' },
                     { name: 'Node.js', count: distribution['nodejs'] || distribution['node'] || 0, color: '#10B981' },
                     { name: 'C++', count: distribution['cpp'] || 0, color: '#F59E0B' },
-                    { name: 'Others', count: Object.keys(distribution).filter(k => !['python', 'nodejs', 'node', 'cpp'].includes(k)).reduce((sum, k) => sum + distribution[k], 0), color: '#8B5CF6' }
+                    { name: 'Go', count: distribution['go'] || 0, color: '#06B6D4' },
+                    { name: 'Others', count: Object.keys(distribution).filter(k => !['python', 'nodejs', 'node', 'cpp', 'go'].includes(k)).reduce((sum, k) => sum + distribution[k], 0), color: '#8B5CF6' }
                 ];
                 setPoolStatus(pools);
                 setTotalStats(prev => ({
@@ -217,7 +218,7 @@ export default function MetricsPage() {
         return () => clearInterval(interval);
     }, [prometheusData.avgDuration, prometheusData.totalRequests]);
 
-    const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'];
+    const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#06B6D4', '#8B5CF6'];
 
     return (
         <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100">
