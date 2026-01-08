@@ -1,12 +1,15 @@
-# ⚡ Infra: FaaS Platform Controller
+# ⚡ Infra-controller
 
 <div align="center">
 
-![Node](https://img.shields.io/badge/Node.js-16%2B-green?style=for-the-badge&logo=node.js)
-![Redis](https://img.shields.io/badge/Redis-Rate%20Limit-DC382D?style=for-the-badge&logo=redis)
-![AWS](https://img.shields.io/badge/AWS-SQS%20%7C%20DynamoDB-FF9900?style=for-the-badge&logo=amazonaws)
+![Node](https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-Rate%20Limit-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-SQS%20%7C%20DynamoDB-FF9900?style=for-the-badge&logo=amazonaws&logoColor=white)
+![API](https://img.shields.io/badge/REST-API-009688?style=for-the-badge&logo=fastapi&logoColor=white)
 
-**Central Control and Orchestration Node for High-Performance FaaS Platform**
+**The Central Nervous System of the FaaS Platform**
+
+*Traffic Orchestration • Resource Governance • Real-time Monitoring*
 
 </div>
 
@@ -14,8 +17,9 @@
 
 ## 📖 Introduction
 
-The Infra Controller acts as the brain of the FaaS platform. It authenticates user requests, controls throughput policy (Rate Limiting), and efficiently distributes tasks to the queue (SQS).
-Leveraging Node.js's asynchronous I/O model, it ensures high throughput on a single instance and performs precise traffic control using Redis Lua Scripts.
+The **Infra Controller** acts as the high-throughput brain of the serverless architecture. Leveraging the non-blocking I/O of **Node.js**, it handles request authentication, rate limiting, and intelligent job distribution to the worker fleet.
+
+It now supports **Dynamic Resource Resizing**, allowing users and Auto-Tuners to adjust function memory configuration on the fly without service interruption.
 
 ---
 
@@ -23,105 +27,112 @@ Leveraging Node.js's asynchronous I/O model, it ensures high throughput on a sin
 
 ```mermaid
 graph LR
-    User[Client] -- "x-api-key" --> ALB[Load Balancer]
-    ALB -- Port 8080 --> Controller[Node.js Controller]
+    User[Client / CLI] -- "x-api-key" --> ALB[Load Balancer]
+    ALB -- Port 8080 --> Control[⚡ Controller]
     
-    subgraph "Control Plane (Infra)"
-    Controller -- "1. Upload (Zip)" --> S3[AWS S3]
-    Controller -- "2. Metadata" --> DDB[DynamoDB]
-    Controller -- "3. Rate Limit" --> Redis[(Redis Cluster)]
-    Controller -- "4. Enqueue Job" --> SQS[AWS SQS]
-    
-    Controller -.-> Prom[Prometheus]
-    Controller -.-> AINode[AI Node / Ollama]
+    subgraph "Control Plane"
+        Control -- "1. Auth & Rate Limit" --> Redis[(Redis Cluster)]
+        Control -- "2. Metadata / Logs" --> DDB[DynamoDB]
+        Control -- "3. Enqueue Job" --> SQS[AWS SQS]
     end
 
-    SQS --> Worker[Worker Nodes]
-    Worker -- "5. Result Pub" --> Redis
-    Redis -- "6. Sub/Result" --> Controller
-    Controller --> User
+    subgraph "Worker Plane"
+        SQS --> Worker[Worker Fleet]
+        Worker -- "4. Pub Result" --> Redis
+    end
+    
+    Redis -- "5. Push Result" --> Control
+    Control --> User
 ```
 
 ---
 
 ## ✨ Key Features
 
-### 🛡️ 1. Enterprise-Grade Security
-- **API Key Authentication**: Access control via strict `x-api-key` header verification.
-- **Precise Rate Limiting**: Atomic traffic control using Redis Lua Scripts (100 req/min per IP).
-- **Input Validation**: Strict validation for memory limits (128MB ~ 10GB) and file types.
+### 🛡️ Enterprise Security & Governance
+- **API Guard**: Strict authentication via `x-api-key` header verification.
+- **Traffic Control**: Atomic rate limiting using Redis Lua Scripts (e.g., 100 req/min depending on IP).
+- **Validation**: Strict schema checks for input payloads and configuration updates.
 
-### 🏥 2. Operational Stability & Resilience
-- **Fail-Fast Startup**: Improves safety by immediately exiting process if critical environment variables are missing.
-- **Graceful Shutdown**: Safely closes pending requests upon SIGTERM signal (Zero Downtime).
-- **Deep Health Check**: Provides a `/health` endpoint that checks not just process status but also Redis connectivity.
+### 🏥 Operational Stability (Resilience)
+- **Fail-Fast Startup**: Immediately exits if critical environment variables (AWS credentials, DB Table) are missing to prevent "Zombie" states.
+- **Graceful Shutdown**: Safely closes pending requests and DB connections upon `SIGTERM` (Zero Downtime deployment).
+- **Deep Health Check**: `/health` endpoint validates Redis connectivity and Queue depth, not just process uptime.
 
-### 🔭 3. Observability
-- **Prometheus Metrics**: Exposes RED (Rate, Errors, Duration) metrics via `/metrics` endpoint.
-- **Log Archiving**: Persists execution logs to DynamoDB (`InfraExecutionLogs`) with auto-expiry via TTL.
-- **Traceable Request IDs**: Tracks entire transaction lifecycle using UUID-based Request IDs.
+### 🔭 Deep Observability
+- **RED Metrics**: Exposes Requests, Errors, and Duration metrics via `/metrics` (Prometheus).
+- **Audit Logs**: Archives full execution history to DynamoDB (`InfraExecutionLogs`) with auto-expiry (TTL).
+- **Tracing**: End-to-end traceability with UUID-based Request IDs.
+
+### ⚡ Dynamic Management (New)
+- **Hot-Swap Config**: Update function memory (`memoryMb`) and description instantly via API.
+- **Auto-Tuner Support**: Accepts optimization commands from the Auto-Tuner engine to resize memory with a single click.
 
 ---
 
 ## 🚀 Getting Started
 
-### Environment Variables (.env)
-Create a `.env` file in the root directory.
+### Environment Setup (`.env`)
 
-| Variable | Description | Example | Note |
-|----------|-------------|---------|------|
-| `PORT` | Service Port | `8080` | |
-| `AWS_REGION` | AWS Region | `ap-northeast-2` | |
-| `BUCKET_NAME` | S3 Code Bucket | `faas-code-bucket` | |
-| `TABLE_NAME` | Function Metadata Table | `InfraFunctions` | |
-| `LOGS_TABLE_NAME` | Execution Logs Table | `InfraExecutionLogs` | **New** |
-| `SQS_URL` | Task Queue URL | `https://sqs...` | |
-| `REDIS_HOST` | Redis Endpoint | `localhost` | |
-| `INFRA_API_KEY` | Secret Auth Key | `secret-key` | |
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `PORT` | Service Port | `8080` |
+| `TABLE_NAME` | Metadata Table | `InfraFunctions` |
+| `LOGS_TABLE_NAME` | Logs Table | `InfraExecutionLogs` |
+| `SQS_URL` | Task Queue URL | `https://sqs...` |
+| `REDIS_HOST` | Redis Endpoint | `localhost` |
+| `INFRA_API_KEY`| Master Auth Key | `secret-key` |
 
-### Running the Server
+### Launch Commands
 ```bash
-# Install Dependencies
+# 1. Install
 npm install
 
-# Run (Development)
+# 2. Run (Dev)
 node controller.js
 
-# Run (Production via PM2)
-pm2 start controller.js --name "controller"
+# 3. Production (PM2)
+pm2 start controller.js --name "faas-controller" -i max
 ```
 
 ---
 
 ## 📡 API Reference
 
-All requests require the `x-api-key` header.
+**Auth Header**: `x-api-key: <YOUR_SECRET_KEY>`
 
-### 1. Execute Function (Run)
+### 1. Execute Function
 `POST /run`
-
-**Body:**
+Orchestrates a synchronous or asynchronous execution.
 ```json
-{
-  "functionId": "func-uuid-1234",
-  "inputData": { "message": "hello" }
+// Request
+{ 
+  "functionId": "func-123", 
+  "inputData": { "msg": "hello" } 
 }
-```
 
-**Response:**
-```json
+// Response
 {
-  "requestId": "req-uuid-5678",
   "status": "SUCCESS",
-  "stdout": "Function executed successfully",
+  "data": "Result...",
   "durationMs": 120
 }
 ```
 
-### 2. Get Logs
-`GET /api/functions/:id/logs` (via Backend Proxy)
-- **Params**: `limit` (default: 50)
-- Retrieves past execution logs from DynamoDB.
+### 2. Update Configuration (New)
+`PUT /functions/:id`
+Now supports **On-the-fly Memory Resizing**.
+```json
+// Request
+{
+  "description": "Optimized by Auto-Tuner",
+  "memoryMb": 128  // Updated from 512
+}
+```
+
+### 3. Get Logs
+`GET /api/functions/:id/logs`
+Fetch historical execution logs with pagination.
 
 ---
 
@@ -129,23 +140,18 @@ All requests require the `x-api-key` header.
 
 **Server Startup:**
 ```json
-{"level":"INFO","timestamp":"2023-10-27T10:00:01.123Z","msg":"Global Redis Connected Successfully"}
-{"level":"INFO","timestamp":"2023-10-27T10:00:01.125Z","msg":"Global Redis Subscriber Connected"}
-{"level":"INFO","timestamp":"2023-10-27T10:00:01.135Z","msg":"Infra Controller v2.4 Started","port":8080}
+{"level":"INFO","msg":"Global Redis Connected Successfully"}
+{"level":"INFO","msg":"Infra Controller v2.5 Started","port":8080}
 ```
 
 **Function Execution:**
 ```json
-{"level":"INFO","timestamp":"2023-10-27T10:05:22.450Z","msg":"Run Request","requestId":"a1b2c3d4...","functionId":"func-123","mode":"SYNC"}
-```
-
-**Error Handling:**
-```json
-{"level":"ERROR","timestamp":"2023-10-27T10:06:00.000Z","msg":"Upload Error","error":"Invalid memoryMb. Must be between 128 and 10240."}
+{"level":"INFO","msg":"Run Request","requestId":"a1b2...","functionId":"func-123","mode":"SYNC"}
+{"level":"INFO","msg":"Execution Success","duration":120}
 ```
 
 ---
 
 <div align="center">
-  <sub>Built with ❤️ by Softbank-Final Team</sub>
+  <sub>Built for Scalability and Control</sub>
 </div>
