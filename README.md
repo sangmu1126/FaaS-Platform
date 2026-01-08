@@ -40,7 +40,7 @@ graph TD
         end
 
         subgraph "Private Subnet (10.0.10.x)"
-            WorkerGroup[[Worker ASG (1~10)]]
+            WorkerGroup[["Worker ASG (1~10)"]]
             Redis[(ElastiCache Redis)]
             
             subgraph "VPC Endpoints (No NAT)"
