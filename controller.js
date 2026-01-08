@@ -792,6 +792,12 @@ app.put(['/functions/:id', '/api/functions/:id'], authenticate, upload.single('f
             expressionAttributeValues[":d"] = { S: req.body.description };
         }
 
+        const mem = req.body.memoryMb || req.body.memory;
+        if (mem) {
+            updateExpression += ", memoryMb = :m";
+            expressionAttributeValues[":m"] = { N: mem.toString() };
+        }
+
         const command = new UpdateItemCommand({
             TableName: process.env.TABLE_NAME,
             Key: { functionId: { S: functionId } },
