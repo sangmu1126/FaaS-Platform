@@ -477,25 +477,40 @@ func main() {
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto px-6 py-8">
             {/* Progress Steps */}
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                {[1, 2, 3].map((s) => (
-                  <div key={s} className="flex items-center flex-1">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${currentStep >= s ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md' : 'bg-white text-gray-400 border-2 border-gray-200'
+            {/* Progress Steps */}
+            <div className="mb-12 relative px-4 max-w-2xl mx-auto">
+              {/* Lines Container - Positioned to start/end at circle centers (approx) */}
+              <div className="absolute top-5 left-0 right-0 mx-12 h-1 bg-gray-200 -z-0 rounded-full">
+                {/* Active Progress Line (Inuputated inside background line) */}
+                <div
+                  className="h-full bg-gradient-to-r from-blue-600 to-purple-600 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${((currentStep - 1) / 2) * 100}%` }}
+                ></div>
+              </div>
+
+              <div className="relative z-10 flex justify-between">
+                {[
+                  { step: 1, label: '기본 설정' },
+                  { step: 2, label: '코드 작성' },
+                  { step: 3, label: '배포 확인' }
+                ].map((item) => (
+                  <div
+                    key={item.step}
+                    className="flex flex-col items-center cursor-pointer group w-24"
+                    onClick={() => item.step < currentStep && setCurrentStep(item.step)}
+                  >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all duration-300 border-2 z-20 bg-white ${currentStep >= item.step
+                        ? 'border-transparent bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg scale-110'
+                        : 'text-gray-400 border-gray-200 group-hover:border-gray-300'
                       }`}>
-                      {s}
+                      {item.step}
                     </div>
-                    {s < 3 && (
-                      <div className={`flex-1 h-1 mx-4 transition-all rounded-full ${currentStep > s ? 'bg-gradient-to-r from-blue-600 to-purple-600' : 'bg-gray-200'
-                        }`}></div>
-                    )}
+                    <span className={`mt-3 text-sm font-medium transition-colors duration-300 whitespace-nowrap ${currentStep >= item.step ? 'text-blue-600' : 'text-gray-400'
+                      }`}>
+                      {item.label}
+                    </span>
                   </div>
                 ))}
-              </div>
-              <div className="flex justify-between">
-                <span className={`text-sm flex-1 text-center ${currentStep >= 1 ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>기본 설정</span>
-                <span className={`text-sm flex-1 text-center ${currentStep >= 2 ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>코드 작성</span>
-                <span className={`text-sm flex-1 text-center ${currentStep >= 3 ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>배포 확인</span>
               </div>
             </div>
 
