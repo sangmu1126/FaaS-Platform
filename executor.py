@@ -102,9 +102,12 @@ class TaskExecutor:
             if not is_warm or use_payload_file:
                 self.containers.copy_to_container(container, host_work_dir, "/workspace")
             
+            # Inject AI SDK (faas_sdk.py) for Python runtime
+            if task.runtime == "python":
+                self._inject_ai_sdk(container)
+            
             cmd, env_vars = self._build_command(task, use_payload_file)
             
-            # Execute with Timeout
             # Execute with Timeout
             self.containers.reset_cgroup_peak(container.id)
             
@@ -213,7 +216,8 @@ class TaskExecutor:
             "FUNCTION_ID": task.function_id,
             "MEMORY_MB": str(task.memory_mb),
             "LLM_MODEL": task.model_id,
-            "OUTPUT_DIR": "/output"
+            "OUTPUT_DIR": "/output",
+            "AI_ENDPOINT": config.AI_ENDPOINT  # For faas_sdk
         }
         
         # Merge user-defined environment variables
@@ -328,4 +332,20 @@ class TaskExecutor:
                     except: pass
         
         threading.Thread(target=_bg, daemon=True).start()
+
+    def _inject_ai_sdk(self, container):
+        """Inject ai_client.py into container as faas_sdk.py for user code to import."""
+        try:
+            sdk_path = Path(config.AI_SDK_PATH)
+            if sdk_path.exists():
+                # Create a temporary directory with the SDK file renamed
+                import tempfile
+                import shutil
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    dest = Path(tmpdir) / "faas_sdk.py"
+                    shutil.copy(sdk_path, dest)
+                    self.containers.copy_to_container(container, Path(tmpdir), "/workspace")
+                logger.debug("AI SDK injected", container_id=container.id[:12])
+        except Exception as e:
+            logger.warning("Failed to inject AI SDK", error=str(e))
 
