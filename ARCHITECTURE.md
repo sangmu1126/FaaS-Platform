@@ -143,7 +143,18 @@ Instead of simple Step Scaling (e.g., "Add 1 instance if SQS > 100"), we employ 
 - **Redis Shared Subscriber**: The Controller uses a single Redis connection for all response subscriptions (Pattern: Singleton/PubSub). This prevents connection leaks under high concurrency (verified v2.4).
 - **Rate Limiting**: Lua-based atomic counters in Redis prevent granular DDOS attacks ($O(1)$ complexity).
 
+### 3.3. Network Security (VPC)
+- **Isolation by Design**: Worker nodes reside in **Private Subnets** with no direct internet access (`0.0.0.0/0` route via NAT only if needed, but we use VPC Endpoints).
+- **Attack Surface Reduction**: The Control Plane (Public Subnet) is the only entry point. All internal specific components (S3, SQS, DynamoDB) are accessed via private **VPC Endpoints**.
+
+### 3.4. Observability
+- **Metrics**: Prometheus scrapes `Controller` and `Worker` for RED metrics (Rate, Error, Duration).
+- **Logs**: CloudWatch Logs collects distributed logs for centralized troubleshooting.
+- **Traceability**: Unique `requestId` propagation across all microservices.
+
 ## 4. Infrastructure (AWS)
+- **Network**: VPC (Public/Private Subnets), VPC Endpoints (Gateway/Interface).
 - **Compute**: EC2 Auto Scaling Group (Launch Template with UserData).
 - **Queue**: SQS Standard (Decoupling Control Plane from Data Plane).
 - **Storage**: S3 (Code), DynamoDB (Metadata), Redis (Hot State).
+- **Monitoring**: CloudWatch, Prometheus.
