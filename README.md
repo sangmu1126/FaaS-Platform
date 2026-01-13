@@ -158,7 +158,8 @@ This project is a **proprietary FaaS (Function as a Service) platform** built fr
 ## 🛠 Tech Stack
 
 ### Infrastructure
--   **Cloud**: AWS (EC2, VPC, S3, DynamoDB, SQS, ElastiCache)
+-   **Cloud**: AWS (EC2, VPC, S3, DynamoDB, SQS, ElastiCache, CloudWatch)
+-   **Observability**: Prometheus (Metrics), CloudWatch (Logs), Grafana (Visualization)
 -   **IaC**: Terraform (Modularized state management)
 -   **OS**: Amazon Linux 2 (Custom Pre-baked AMI)
 
@@ -189,6 +190,11 @@ Used **Target Tracking Scaling** based on `BacklogPerInstance` metric.
 -   **Isolation**: No direct internet access for compute nodes.
 -   **Input Validation**: Strict schema validation for function uploads.
 -   **Resource Limits**: Kernel-level Cgroup limits (CPU/Memory) enforced on every container.
+
+### 4. Observability & Monitoring
+-   **Metrics Pipeline**: Worker Agent pushes real-time metrics (CPU/Memory/Duration) to **Prometheus**.
+-   **Log Aggregation**: All distributed logs are centralized in **AWS CloudWatch Logs**.
+-   **Self-Healing Feedback**: "Smart Auto-Tuner" analyzes usage data to optimize resource allocation dynamically.
 
 ---
 
