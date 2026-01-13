@@ -1,0 +1,7 @@
+boto3
+redis
+docker
+structlog
+python-dotenv
+prometheus_client
+requests

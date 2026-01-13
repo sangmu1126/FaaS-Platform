@@ -1,0 +1,56 @@
+# --- 🔐 Secrets & Configuration (절대 커밋 금지) ---
+.env
+.env.*
+config.yaml
+secrets/
+*.pem
+*.key
+
+# --- 🐍 Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+# Distribution / Packaging
+dist/
+build/
+*.egg-info/
+# Virtual Environments
+venv/
+env/
+.venv/
+
+# --- 🐳 Docker ---
+.docker/
+docker-compose.override.yml
+
+# --- 🏗️ NanoGrid Agent Runtime Files (실행 중 생성되는 파일들) ---
+# executor.py에서 다운로드하는 사용자 코드
+*.zip
+*.tar
+*.tar.gz
+
+# C++ 컴파일 결과물 (executor.py가 생성하는 실행 파일)
+*.o
+*.out
+main
+# main.exe (Windows 환경일 경우)
+
+# 실행 결과 및 임시 디렉터리
+output/
+workspace/
+tasks/
+tmp/
+
+# --- 🪵 Logs & Databases ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# 로컬 Redis 스냅샷
+dump.rdb
+
+# --- 💻 IDE & OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

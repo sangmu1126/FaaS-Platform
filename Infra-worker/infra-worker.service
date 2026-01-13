@@ -1,0 +1,21 @@
+[Unit]
+Description=Infra Worker Agent Service
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/faas-worker
+EnvironmentFile=/home/ec2-user/faas-worker/.env
+ExecStart=/usr/bin/python3 /home/ec2-user/faas-worker/agent.py
+Restart=always
+RestartSec=10
+# 로그 설정
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=infra-worker
+
+[Install]
+WantedBy=multi-user.target
