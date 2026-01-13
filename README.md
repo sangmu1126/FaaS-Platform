@@ -2,8 +2,74 @@
 
 > **A Custom Serverless Engine engineered on AWS EC2 & Docker, designed to overcome Cold Start latency and provide enterprise-grade reliability at minimal cost.**
 
-![Architecture Diagram](https://mermaid.ink/img/pako:eNptksFuwyAMhl_F8plU9QG4tF122m3SYYdNHdISqE2UBChoq1b13ScU2q69WCD-_O3PGL6QU4mQIDfldvlAjeQe-z09vVFCJ7V60Fp5tUq_y3_yA81mMyilHjQ3qI3G87nSChXqDrXRGxQz-l4ZDeVn1EaLUjNoQ73S8F9oWdBCr9A6vUK7QvNbj_C0zPDcIByhBfjwDM0L2n-i5UBF4P1k4d9oOVAT-DArfKPlQW3Ay8-vH1E_9H6-0z5sWf0uE0L2ZM_2QvZsP0E-Qp7Z52xPMs0y-pRp8oyS571fIM-Qd_YF8gnyyT49Rj5D3tmnbJ-yfZLsmSTPJNlTybP8f81o_wL-A79q)
-*(Architecture: Event-Driven Microservices utilizing ASG, SQS, and Redis)*
+```mermaid
+graph TD
+    %% 🎨 Style Definitions
+    classDef client fill:#333,stroke:#fff,stroke-width:2px,color:#fff
+    classDef control fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
+    classDef worker fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef aws fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100
+    classDef storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
+    classDef ai fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f
+
+    %% 🌐 External World
+    User[User / Client]:::client -->|HTTPS POST /run| ALB(ALB / Elastic IP):::aws
+    ALB -- Port 8080 --> Controller
+
+    %% 🧠 Control Plane (Node.js)
+    subgraph "Control Plane (High Throughput)"
+        Controller[Controller Service]:::control
+        
+        %% Internal Logic
+        RateLimit{Rate Limiter}:::control
+        Auth{Auth Guard}:::control
+        
+        Controller --> Auth
+        Auth -->|x-api-key Valid| RateLimit
+        RateLimit -->|Token Bucket Check| Redis_Global
+    end
+
+    %% ⚡ Compute Plane (Python + Docker)
+    subgraph "Compute Plane (Private Subnet)"
+        Agent[Worker Agent]:::worker
+        
+        %% Worker Internals
+        subgraph "Worker Instance (EC2)"
+            WarmPool[Warm Container Pool]:::worker
+            AutoTuner[Smart Auto-Tuner]:::worker
+            MetricCol[Cgroup Metrics]:::worker
+            
+            Agent -->|1. Pop Job| SQS
+            Agent -->|2. Acquire| WarmPool
+            WarmPool -->|3. Docker Exec| Container[User Container]:::worker
+            
+            Container -.->|Real-time Stats| MetricCol
+            MetricCol -->|Feedback| AutoTuner
+        end
+    end
+
+    %% 🤖 External AI Service
+    AINode[AI Node / Ollama]:::ai -.->|gRPC/HTTP Prediction| Container
+
+    %% ☁️ AWS Infrastructure
+    SQS[AWS SQS<br>(Job Queue)]:::aws
+    Redis_Global[(Redis Cluster<br>Pub/Sub & State)]:::storage
+    S3[(AWS S3<br>Code & Output)]:::storage
+    DDB[(DynamoDB<br>Logs & Metadata)]:::storage
+    
+    %% 🔄 Data Flow
+    RateLimit -->|Allowed| SQS
+    RateLimit -->|Refused 429| User
+    
+    Agent -->|Heartbeat Push| Controller
+    Agent -->|Upload Result| S3
+    Agent -->|Log Stream| DDB
+    
+    %% Return Path
+    Container -->|Result| Redis_Global
+    Redis_Global -->|Sub| Controller
+    Controller -->|Response 200| User
+```
 
 ---
 
