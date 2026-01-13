@@ -15,77 +15,67 @@ graph TD
 
     %% 🌐 External World
     User[User / Client]:::client -->|HTTPS POST /run| ALB(ALB / Elastic IP):::aws
-    ALB -- Port 8080 --> Controller
-
-    %% 🧠 Control Plane (Node.js)
-    subgraph "Control Plane<br>(High Throughput)"
+    AINode[AI Node / Ollama]:::ai
+    
+    %% ☁️ AWS VPC Boundary
+    subgraph "AWS VPC"
         direction TB
-        %% Spacer to force Title visibility
-        Space1[ ]:::empty
         
-        Controller[Controller Service]:::control
-        
-        %% Internal Logic
-        RateLimit{Rate Limiter}:::control
-        Auth{Auth Guard}:::control
-        
-        Space1 ~~~ Controller
-        Controller --> Auth
-        Auth -->|x-api-key Valid| RateLimit
-        RateLimit -->|Token Bucket Check| Redis_Global
-    end
-
-    %% ⚡ Compute Plane (Python + Docker)
-    subgraph "Compute Plane<br>(Private Subnet)"
-        direction TB
-        %% Spacer for Private Subnet Title
-        Space2[ ]:::empty
-        
-        Agent[Worker Agent]:::worker
-        
-        %% Worker Internals
-        subgraph "Worker Instance<br>(EC2)"
+        %% 1. Shared Managed Services (Middle Layer)
+        subgraph "Shared Services<br>(VPC Endpoints & Gateway)"
             direction TB
-            %% Spacer for Instance Title
-            Space3[ ]:::empty
-            
-            WarmPool[Warm Container Pool]:::worker
-            AutoTuner[Smart Auto-Tuner]:::worker
-            MetricCol[Cgroup Metrics]:::worker
-            
-            Space3 ~~~ Agent
-            Agent -->|1. Pop Job| SQS
-            Agent -->|2. Acquire| WarmPool
-            WarmPool -->|3. Docker Exec| Container[User Container]:::worker
-            
-            Container -.->|Real-time Stats| MetricCol
-            MetricCol -->|Feedback| AutoTuner
+            SQS[AWS SQS - Job Queue]:::aws
+            Redis_Global[(Redis Cluster)]:::storage
+            S3[(AWS S3)]:::storage
+            DDB[(DynamoDB)]:::storage
         end
-        
-        Space2 ~~~ Agent
+
+        %% 2. Control Plane (Right)
+        subgraph "Public Subnet<br>(Control Plane)"
+            direction TB
+            Controller[Controller Service]:::control
+            Auth{Auth Guard}:::control
+            RateLimit{Rate Limiter}:::control
+        end
+
+        %% 3. Compute Plane (Left)
+        subgraph "Private Subnet<br>(Compute Plane)"
+            direction TB
+            Agent[Worker Agent]:::worker
+            
+            subgraph "Worker Instance<br>(EC2)"
+                WarmPool[Warm Pool]:::worker
+                Container[User Container]:::worker
+                AutoTuner[Auto-Tuner]:::worker
+            end
+        end
     end
-
-    %% 🤖 External AI Service
-    AINode[AI Node / Ollama]:::ai -.->|gRPC/HTTP Prediction| Container
-
-    %% ☁️ AWS Infrastructure
-    SQS[AWS SQS - Job Queue]:::aws
-    Redis_Global[(Redis Cluster - Pub/Sub & State)]:::storage
-    S3[(AWS S3 - Code & Output)]:::storage
-    DDB[(DynamoDB - Logs & Metadata)]:::storage
     
-    %% 🔄 Data Flow
+    %% Connections (Logic Flow)
+    %% Inbound
+    ALB -- Port 8080 --> Controller
+    Controller --> Auth
+    Auth --> RateLimit
+    RateLimit -->|Check| Redis_Global
+    
+    %% Job Dispatch
     RateLimit -->|Allowed| SQS
-    RateLimit -->|Refused 429| User
+    Controller -->|Upload Code| S3
     
-    Agent -->|Heartbeat Push| Controller
-    Agent -->|Upload Result| S3
-    Agent -->|Log Stream| DDB
+    %% Worker Execution
+    Agent -->|1. Pop| SQS
+    Agent -->|2. Get| WarmPool
+    Agent -->|Download| S3
+    WarmPool -->|3. Run| Container
+    Container -->|Inference| AINode
+    Container -->|Feedback| AutoTuner
     
-    %% Return Path
+    %% Reporting
+    Agent -->|Logs| DDB
+    Agent -->|Heartbeat| Controller
     Container -->|Result| Redis_Global
     Redis_Global -->|Sub| Controller
-    Controller -->|Response 200| User
+    Controller -->|Response| User
 ```
 
 ---
