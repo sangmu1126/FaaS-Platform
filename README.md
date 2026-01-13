@@ -11,6 +11,7 @@ graph TD
     classDef aws fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100
     classDef storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
     classDef ai fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f
+    classDef monitor fill:#e0f7fa,stroke:#006064,stroke-width:2px,color:#006064
     classDef empty width:0px,height:0px,stroke:none,fill:none,color:none
 
     %% 🌐 External World
@@ -21,7 +22,7 @@ graph TD
     subgraph "AWS VPC"
         direction TB
         
-        %% 1. Shared Managed Services (Middle Layer)
+        %% 1. Shared Managed Services
         subgraph "Shared Services<br>(VPC Endpoints & Gateway)"
             direction TB
             SQS[AWS SQS - Job Queue]:::aws
@@ -29,25 +30,54 @@ graph TD
             S3[(AWS S3)]:::storage
             DDB[(DynamoDB)]:::storage
         end
-
-        %% 2. Control Plane (Right)
-        subgraph "Public Subnet<br>(Control Plane)"
+        
+        %% 2. Monitoring Stack
+        subgraph "Observability"
             direction TB
-            Controller[Controller Service]:::control
-            Auth{Auth Guard}:::control
-            RateLimit{Rate Limiter}:::control
+            Prom[Prometheus]:::monitor
+            CW[CloudWatch]:::monitor
         end
 
-        %% 3. Compute Plane (Left)
+        %% 3. Control Plane
+        subgraph "Public Subnet<br>(Control Plane)"
+            direction TB
+            %% Spacer to force Title visibility
+            Space1[ ]:::empty
+            
+            Controller[Controller Service]:::control
+            
+            %% Internal Logic
+            RateLimit{Rate Limiter}:::control
+            Auth{Auth Guard}:::control
+            
+            Space1 ~~~ Controller
+            Controller --> Auth
+            Auth -->|x-api-key Valid| RateLimit
+            RateLimit -->|Token Bucket Check| Redis_Global
+        end
+
+        %% 4. Compute Plane
         subgraph "Private Subnet<br>(Compute Plane)"
             direction TB
+            %% Spacer for Private Subnet Title
+            Space2[ ]:::empty
+            
             Agent[Worker Agent]:::worker
             
+            %% Worker Internals
             subgraph "Worker Instance<br>(EC2)"
+                direction TB
+                %% Spacer for Instance Title
+                Space3[ ]:::empty
+                
                 WarmPool[Warm Pool]:::worker
                 Container[User Container]:::worker
                 AutoTuner[Auto-Tuner]:::worker
+                
+                Space3 ~~~ Agent
             end
+            
+            Space2 ~~~ Agent
         end
     end
     
@@ -69,6 +99,11 @@ graph TD
     WarmPool -->|3. Run| Container
     Container -->|Inference| AINode
     Container -->|Feedback| AutoTuner
+    
+    %% Monitoring Flow (New)
+    Agent -.->|Metrics| Prom
+    Agent -.->|Logs| CW
+    Controller -.->|Metrics| Prom
     
     %% Reporting
     Agent -->|Logs| DDB
