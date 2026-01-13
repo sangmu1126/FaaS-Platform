@@ -20,13 +20,16 @@ graph TD
     %% 🧠 Control Plane (Node.js)
     subgraph "Control Plane<br>(High Throughput)"
         direction TB
+        %% Spacer to force Title visibility
+        Space1[ ]:::empty
+        
         Controller[Controller Service]:::control
-        pad1[ ]:::empty
         
         %% Internal Logic
         RateLimit{Rate Limiter}:::control
         Auth{Auth Guard}:::control
         
+        Space1 ~~~ Controller
         Controller --> Auth
         Auth -->|x-api-key Valid| RateLimit
         RateLimit -->|Token Bucket Check| Redis_Global
@@ -35,17 +38,22 @@ graph TD
     %% ⚡ Compute Plane (Python + Docker)
     subgraph "Compute Plane<br>(Private Subnet)"
         direction TB
+        %% Spacer for Private Subnet Title
+        Space2[ ]:::empty
+        
         Agent[Worker Agent]:::worker
-        pad2[ ]:::empty
         
         %% Worker Internals
         subgraph "Worker Instance<br>(EC2)"
             direction TB
+            %% Spacer for Instance Title
+            Space3[ ]:::empty
+            
             WarmPool[Warm Container Pool]:::worker
             AutoTuner[Smart Auto-Tuner]:::worker
             MetricCol[Cgroup Metrics]:::worker
-            pad3[ ]:::empty
             
+            Space3 ~~~ Agent
             Agent -->|1. Pop Job| SQS
             Agent -->|2. Acquire| WarmPool
             WarmPool -->|3. Docker Exec| Container[User Container]:::worker
@@ -53,6 +61,8 @@ graph TD
             Container -.->|Real-time Stats| MetricCol
             MetricCol -->|Feedback| AutoTuner
         end
+        
+        Space2 ~~~ Agent
     end
 
     %% 🤖 External AI Service
