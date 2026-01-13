@@ -52,10 +52,10 @@ graph TD
     AINode[AI Node / Ollama]:::ai -.->|gRPC/HTTP Prediction| Container
 
     %% ☁️ AWS Infrastructure
-    SQS[AWS SQS<br>(Job Queue)]:::aws
-    Redis_Global[(Redis Cluster<br>Pub/Sub & State)]:::storage
-    S3[(AWS S3<br>Code & Output)]:::storage
-    DDB[(DynamoDB<br>Logs & Metadata)]:::storage
+    SQS[AWS SQS - Job Queue]:::aws
+    Redis_Global[(Redis Cluster - Pub/Sub & State)]:::storage
+    S3[(AWS S3 - Code & Output)]:::storage
+    DDB[(DynamoDB - Logs & Metadata)]:::storage
     
     %% 🔄 Data Flow
     RateLimit -->|Allowed| SQS
