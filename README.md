@@ -17,7 +17,7 @@ graph TD
     ALB -- Port 8080 --> Controller
 
     %% 🧠 Control Plane (Node.js)
-    subgraph "Control Plane (High Throughput)"
+    subgraph "Control Plane<br>(High Throughput)"
         Controller[Controller Service]:::control
         
         %% Internal Logic
@@ -30,11 +30,11 @@ graph TD
     end
 
     %% ⚡ Compute Plane (Python + Docker)
-    subgraph "Compute Plane (Private Subnet)"
+    subgraph "Compute Plane<br>(Private Subnet)"
         Agent[Worker Agent]:::worker
         
         %% Worker Internals
-        subgraph "Worker Instance (EC2)"
+        subgraph "Worker Instance<br>(EC2)"
             WarmPool[Warm Container Pool]:::worker
             AutoTuner[Smart Auto-Tuner]:::worker
             MetricCol[Cgroup Metrics]:::worker
