@@ -1,0 +1,14 @@
+{
+    "name": "faas-application",
+    "version": "1.0.0",
+    "description": "FaaS Application Monorepo Root",
+    "private": true,
+    "scripts": {
+        "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+        "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+        "start": "npm run dev"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}
