@@ -11,6 +11,7 @@ graph TD
     classDef aws fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100
     classDef storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
     classDef ai fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f
+    classDef empty width:0px,height:0px,stroke:none,fill:none,color:none
 
     %% 🌐 External World
     User[User / Client]:::client -->|HTTPS POST /run| ALB(ALB / Elastic IP):::aws
@@ -18,7 +19,9 @@ graph TD
 
     %% 🧠 Control Plane (Node.js)
     subgraph "Control Plane<br>(High Throughput)"
+        direction TB
         Controller[Controller Service]:::control
+        pad1[ ]:::empty
         
         %% Internal Logic
         RateLimit{Rate Limiter}:::control
@@ -31,13 +34,17 @@ graph TD
 
     %% ⚡ Compute Plane (Python + Docker)
     subgraph "Compute Plane<br>(Private Subnet)"
+        direction TB
         Agent[Worker Agent]:::worker
+        pad2[ ]:::empty
         
         %% Worker Internals
         subgraph "Worker Instance<br>(EC2)"
+            direction TB
             WarmPool[Warm Container Pool]:::worker
             AutoTuner[Smart Auto-Tuner]:::worker
             MetricCol[Cgroup Metrics]:::worker
+            pad3[ ]:::empty
             
             Agent -->|1. Pop Job| SQS
             Agent -->|2. Acquire| WarmPool
