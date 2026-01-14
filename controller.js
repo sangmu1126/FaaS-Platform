@@ -844,13 +844,31 @@ app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async
         });
         const item = await db.send(getCmd);
 
-        if (item.Item && item.Item.s3Key) {
-            await s3.send(new DeleteObjectCommand({
-                Bucket: process.env.BUCKET_NAME,
-                Key: item.Item.s3Key.S
-            }));
+        // Check if function exists
+        if (!item.Item) {
+            logger.warn(`Function not found for deletion`, { functionId });
+            return res.status(404).json({ error: "Function not found", functionId });
         }
 
+        // Try to delete S3 object (non-blocking - continue even if S3 fails)
+        if (item.Item.s3Key && item.Item.s3Key.S) {
+            try {
+                await s3.send(new DeleteObjectCommand({
+                    Bucket: process.env.BUCKET_NAME,
+                    Key: item.Item.s3Key.S
+                }));
+                logger.info(`S3 object deleted`, { functionId, s3Key: item.Item.s3Key.S });
+            } catch (s3Error) {
+                // Log but don't fail - S3 object might already be deleted
+                logger.warn(`Failed to delete S3 object (continuing with DynamoDB deletion)`, {
+                    functionId,
+                    s3Key: item.Item.s3Key.S,
+                    error: s3Error.message
+                });
+            }
+        }
+
+        // Delete from DynamoDB
         await db.send(new DeleteItemCommand({
             TableName: process.env.TABLE_NAME,
             Key: { functionId: { S: functionId } }
