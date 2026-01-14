@@ -178,6 +178,19 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                         TableName: process.env.LOGS_TABLE_NAME,
                         Item: logItem
                     })).catch(err => console.error("Failed to persist log to DynamoDB", err));
+
+                    // Increment Invocations & Total Duration (for Avg Latency)
+                    if (process.env.TABLE_NAME) {
+                        db.send(new UpdateItemCommand({
+                            TableName: process.env.TABLE_NAME,
+                            Key: { functionId: { S: result.functionId } },
+                            UpdateExpression: "ADD invocations :inc, totalDuration :dur",
+                            ExpressionAttributeValues: {
+                                ":inc": { N: "1" },
+                                ":dur": { N: duration.toString() }
+                            }
+                        })).catch(err => console.error("Failed to increment stats", err));
+                    }
                 }
 
                 // Add to In-Memory Buffer
@@ -613,6 +626,9 @@ app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res)
             runtime: item.runtime ? item.runtime.S : "python",
             memoryMb: item.memoryMb ? parseInt(item.memoryMb.N) : 128,
             invocations: item.invocations ? parseInt(item.invocations.N) : 0,
+            avgDuration: (item.invocations && parseInt(item.invocations.N) > 0 && item.totalDuration)
+                ? Math.round(parseInt(item.totalDuration.N) / parseInt(item.invocations.N))
+                : 0,
             uploadedAt: item.uploadedAt ? item.uploadedAt.S : new Date().toISOString()
         }));
         res.json(items);
