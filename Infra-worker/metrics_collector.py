@@ -43,7 +43,7 @@ class AutoTuner:
         # --- 1. Memory Analysis ---
         if mem_ratio < 0.3:
             # Resource Waste
-            rec_mb = max(int(peak_mb * 1.5), 128) # Min 128MB
+            rec_mb = max(int(peak_mb * 2.0), 32) # 2x buffer, min 32MB
             if rec_mb < allocated_mb:
                 saved_percent = int((1 - (rec_mb / allocated_mb)) * 100)
                 tip = f"💡 Resource Waste: Usage ({int(peak_mb)}MB) is low. Reduce to {rec_mb}MB to save {saved_percent}%."
