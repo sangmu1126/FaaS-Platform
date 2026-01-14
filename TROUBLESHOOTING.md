@@ -97,7 +97,7 @@ with open(temp_tar, "wb") as f:
 
 ## 6. 🚀 Performance: The 1100ms Latency Mystery (Deep Dive)
 
-### � Performance Timeline
+### 📊 Performance Timeline
 | 단계 | Latency | 병목 원인 | 비고 |
 |:---:|:---:|:---|:---|
 | **Initial** | **2500ms** | 컨테이너 생성 및 코드 컴파일 | Cold Start |
@@ -163,3 +163,107 @@ with open(peak_reset_file, "w") as f:
 *   **Observability**: Zero-overhead Cgroup Monitoring + AutoTuner I/O Detection.
 *   **Result**: `t3.micro`라는 열악한 환경에서도 **91ms**라는 놀라운 응답 속도 달성. 이는 AWS Lambda의 Cold Start보다 빠르며 Warm Start와 대등한 수준임.
 
+---
+
+## 7. 🗑️ Bug: 함수 삭제 500 에러 및 S3 NoSuchBucket (2026-01-14)
+
+### 🔴 문제 상황
+*   **증상 1:** 프론트엔드에서 함수 삭제 시 `500 Internal Server Error` 발생.
+*   **증상 2:** 삭제는 성공하지만 S3 정리 실패 경고 (`S3 deletion failed: NoSuchBucket`).
+*   **증상 3:** 함수 업로드 실패 (`Upload Failed: The specified bucket does not exist`).
+
+### 🔍 원인 분석
+1.  **DELETE 에러 핸들링 부재:** Controller의 DELETE 엔드포인트에서 S3 삭제 실패 시 전체 요청이 500 에러로 실패.
+2.  **S3 버킷 이름 불일치:** Terraform 재배포 시 새 S3 버킷이 생성되었지만, Controller의 `.env`에 이전 버킷 이름이 남아있음.
+    ```
+    Controller .env:    faas-sooming-code-20251215010641615400000001 (❌ 존재하지 않음)
+    실제 AWS 버킷:      faas-sooming-code-20260105035944818500000001 (✅ 현재 버킷)
+    ```
+3.  **Pre-baked AMI 문제:** AMI 생성 시점의 `.env` 값이 굳어져서, `user_data`가 덮어쓰지 못함.
+
+### 🟢 해결 방안
+
+#### Step 1: DELETE 에러 핸들링 개선 (Infra-controller/controller.js)
+```javascript
+// S3 삭제 실패해도 DynamoDB 삭제는 계속 진행
+if (item.Item.s3Key && item.Item.s3Key.S) {
+    try {
+        await s3.send(new DeleteObjectCommand({...}));
+    } catch (s3Error) {
+        // Log but don't block - S3 object might already be deleted
+        logger.warn(`S3 deletion failed: ${s3Error.message}`);
+    }
+}
+// DynamoDB 삭제는 항상 실행
+await db.send(new DeleteItemCommand({...}));
+```
+
+#### Step 2: BUCKET_NAME 수동 수정 (긴급 조치)
+```bash
+# Controller EC2에서 실행
+sed -i 's/faas-sooming-code-20251215.../faas-sooming-code-20260105.../g' /home/ec2-user/faas-controller/.env
+pm2 restart faas-controller
+```
+
+#### Step 3: user_data 스크립트 개선 (영구 해결)
+```bash
+# user_data_controller.sh / user_data_worker.sh에 추가
+# Git 권한 수정 (AMI가 root로 bake된 경우 대응)
+chown -R ec2-user:ec2-user /home/ec2-user/faas-controller
+git config --global --add safe.directory /home/ec2-user/faas-controller
+
+# .env는 항상 덮어쓰기 (Terraform 최신 값 보장)
+cat <<EOF > /home/ec2-user/faas-controller/.env
+BUCKET_NAME=${bucket_name}  # Terraform에서 주입
+...
+EOF
+```
+
+#### Step 4: Instance Refresh 적용
+```powershell
+# Terraform Apply 후 Launch Template 업데이트
+terraform apply
+
+# Controller/Worker 인스턴스 교체 (새 user_data로 부팅)
+aws autoscaling start-instance-refresh --auto-scaling-group-name faas-sooming-controller-asg --region ap-northeast-2
+aws autoscaling start-instance-refresh --auto-scaling-group-name faas-sooming-worker-asg --region ap-northeast-2
+```
+
+### 📚 교훈 (Lessons Learned)
+| 항목 | 내용 |
+|------|------|
+| **Immutable Infrastructure** | AMI는 "템플릿", 환경 변수는 "런타임 주입"으로 분리 |
+| **Error Isolation** | 부수 작업(S3 정리) 실패가 핵심 작업(DynamoDB 삭제)을 막지 않도록 설계 |
+| **Infrastructure Sync** | Terraform 재배포 시 Instance Refresh로 환경 변수 동기화 필요 |
+
+---
+
+## 8. 🔐 Bug: Git Permission Denied on Boot (AMI Root Issue)
+
+### 🔴 문제 상황
+*   **증상:** EC2 인스턴스 부팅 후 `git pull` 실행 시 권한 에러 발생.
+*   **에러 메시지:**
+    ```
+    fatal: detected dubious ownership in repository at '/home/ec2-user/faas-controller'
+    ```
+
+### 🔍 원인 분석
+*   **AMI Bake 시 root 권한 사용:** AMI 생성 시 root로 `git clone`을 실행하면, `.git` 디렉토리가 root 소유로 생성됨.
+*   **ec2-user 권한 불일치:** 부팅 후 ec2-user로 `git pull`하면 소유권 불일치로 Git이 보안 경고를 발생시킴.
+
+### 🟢 해결 코드 (Copy & Paste)
+```bash
+# user_data 스크립트에 추가 (부팅 시 자동 실행)
+
+# 1. 디렉토리 소유권을 ec2-user로 변경
+chown -R ec2-user:ec2-user /home/ec2-user/faas-controller
+
+# 2. Git safe.directory 설정 (dubious ownership 경고 해제)
+git config --global --add safe.directory /home/ec2-user/faas-controller
+```
+
+### 💡 예방책
+*   **AMI Bake 시:** `su - ec2-user -c "git clone ..."` 로 ec2-user 권한으로 clone.
+*   **user_data에 방어 코드:** 위 코드를 항상 포함시켜 어떤 상황에서도 권한 문제 방지.
+
+---
