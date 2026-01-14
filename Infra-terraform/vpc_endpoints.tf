@@ -63,3 +63,31 @@ resource "aws_vpc_endpoint" "sqs" {
     Name = "${var.project_name}-sqs-endpoint"
   }
 }
+
+# 4. SSM Endpoints (Managed via for_each loop)
+# Required for:
+# - ssm: Core SSM service
+# - ec2messages: Command execution (Run Command)
+# - ssmmessages: Session Manager (Shell access)
+locals {
+  ssm_services = toset([
+    "ssm",
+    "ec2messages",
+    "ssmmessages"
+  ])
+}
+
+resource "aws_vpc_endpoint" "ssm_endpoints" {
+  for_each = local.ssm_services
+
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.${each.value}"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name = "${var.project_name}-${each.value}-endpoint"
+  }
+}
