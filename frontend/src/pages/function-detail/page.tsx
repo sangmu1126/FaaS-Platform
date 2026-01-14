@@ -273,7 +273,7 @@ export default function FunctionDetailPage() {
         executionTime,
         responseTime: result.durationMs || executionTime,
         memoryUsed: result.peakMemoryBytes ? Math.round(result.peakMemoryBytes / 1024 / 1024) : 0,
-        memoryAllocated: result.allocatedMemoryMb || 512,
+        memoryAllocated: result.allocatedMemoryMb || functionItem?.memoryMb || 128,
         cpuUsage: 0, // Not currently returned by worker
         networkRx: 0,
         networkTx: 0,
