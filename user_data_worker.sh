@@ -11,7 +11,11 @@ while [ -z "$CONTROLLER_IP" ] || [ "$CONTROLLER_IP" == "None" ]; do
   fi
 done
 
-# 1. Create .env file
+# 1. Fix Git Permissions (AMI may have been baked as root)
+chown -R ec2-user:ec2-user /home/ec2-user/faas-worker
+git config --global --add safe.directory /home/ec2-user/faas-worker
+
+# 2. Create .env file (Always overwrite - ensures latest Terraform values)
 cat <<EOF > /home/ec2-user/faas-worker/.env
 AWS_REGION=${aws_region}
 SQS_URL=${sqs_url}
@@ -29,6 +33,6 @@ CONTROLLER_URL=http://$CONTROLLER_IP:8080
 EOF
 chown ec2-user:ec2-user /home/ec2-user/faas-worker/.env
 
-# 2. Start Agent
+# 3. Start Agent
 systemctl daemon-reload
 systemctl enable --now faas-worker
