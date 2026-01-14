@@ -251,21 +251,23 @@ export const gatewayController = {
                 logger.warn('Prometheus metrics unavailable, using local telemetry');
             }
 
-            // Use Prometheus data if available, fallback to local telemetry
+            // Use Prometheus data if available, fallback to DynamoDB aggregated data
+            const dbExecCount = Array.isArray(functions) ? functions.reduce((sum, f) => sum + (f.invocations || 0), 0) : 0;
             const localExecCount = Object.values(localStats).reduce((sum, s) => sum + (s.calls || 0), 0);
             const localErrorCount = Object.values(localStats).reduce((sum, s) => sum + (s.errors || 0), 0);
+
+            // Prefer Prometheus > DynamoDB > Local Memory
+            const finalTotalExecutions = promMetrics.totalInvocations || dbExecCount || localExecCount;
 
             const stats = {
                 totalFunctions: Array.isArray(functions) ? functions.length : 0,
                 activeFunctions: Array.isArray(functions)
                     ? functions.filter(f => f.status === 'READY' || f.status === 'active').length
                     : 0,
-                totalExecutions: promMetrics.totalInvocations || localExecCount,
+                totalExecutions: finalTotalExecutions,
                 totalErrors: promMetrics.errorCount || localErrorCount,
                 avgResponseTime: promMetrics.avgDuration || 0,
-                successRate: promMetrics.successRate || (localExecCount > 0
-                    ? Math.round(((localExecCount - localErrorCount) / localExecCount) * 10000) / 100
-                    : 100),
+                successRate: promMetrics.successRate || 100,
                 byFunction: promMetrics.byFunction || []
             };
 

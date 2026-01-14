@@ -51,7 +51,7 @@ export default function DashboardPage() {
             status: 'active' as 'active' | 'inactive' | 'deploying',
             lastDeployed: d.uploadedAt ? new Date(d.uploadedAt).toLocaleString() : '-',
             invocations: d.invocations || 0, // Real data from DynamoDB
-            avgDuration: 0,
+            avgDuration: d.avgDuration || 0, // Real data from DynamoDB
             memory: d.memoryMb || 128,
             warmPool: 0
           };
