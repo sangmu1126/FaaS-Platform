@@ -294,6 +294,16 @@ export const proxyService = {
             };
         }
 
+        // If functionId specified but no data found, return zeros to trigger fallback
+        if (functionId) {
+            return {
+                invocations: 0,
+                avgDuration: 0,
+                errors: 0,
+                successRate: 100
+            };
+        }
+
         // Return global metrics with per-function breakdown
         const avgDurationMs = metrics.global.totalDurationCount > 0
             ? (metrics.global.totalDurationSum / metrics.global.totalDurationCount) * 1000
