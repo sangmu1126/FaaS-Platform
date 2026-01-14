@@ -859,11 +859,14 @@ app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async
                 }));
                 logger.info(`S3 object deleted`, { functionId, s3Key: item.Item.s3Key.S });
             } catch (s3Error) {
-                // Log but don't fail - S3 object might already be deleted
-                logger.warn(`Failed to delete S3 object (continuing with DynamoDB deletion)`, {
+                // Log full error details for debugging
+                logger.warn(`S3 deletion failed`, {
                     functionId,
+                    bucket: process.env.BUCKET_NAME,
                     s3Key: item.Item.s3Key.S,
-                    error: s3Error.message
+                    errorName: s3Error.name,
+                    errorCode: s3Error.Code || s3Error.$metadata?.httpStatusCode,
+                    errorMessage: s3Error.message
                 });
             }
         }
