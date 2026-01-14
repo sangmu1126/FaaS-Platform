@@ -9,7 +9,11 @@ aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id ${eip_alloc
 PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 aws ssm put-parameter --name "/faas/controller/private_ip" --value "$PRIVATE_IP" --type "String" --overwrite --region ${aws_region}
 
-# 2. Update .env file (Injecting dynamic variables)
+# 2. Fix Git Permissions (AMI may have been baked as root)
+chown -R ec2-user:ec2-user /home/ec2-user/faas-controller
+git config --global --add safe.directory /home/ec2-user/faas-controller
+
+# 3. Update .env file (Always overwrite - ensures latest Terraform values)
 cat <<EOF > /home/ec2-user/faas-controller/.env
 PORT=8080
 AWS_REGION=${aws_region}
@@ -25,10 +29,7 @@ AWS_SECRET_ACCESS_KEY=${aws_secret_key}
 EOF
 chown ec2-user:ec2-user /home/ec2-user/faas-controller/.env
 
-# 3. Restart Application to pick up new env vars
-# Since CloudWatch Agent and App are already installed/running in AMI
-# We just need to restart the app.
+# 4. Restart Application to pick up new env vars
 su - ec2-user -c "pm2 restart faas-controller"
 
-# 4. CloudWatch Agent is already running (chkconfig on)
-
+# 5. CloudWatch Agent is already running (chkconfig on)
