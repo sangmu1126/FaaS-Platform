@@ -859,15 +859,9 @@ app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async
                 }));
                 logger.info(`S3 object deleted`, { functionId, s3Key: item.Item.s3Key.S });
             } catch (s3Error) {
-                // Log full error details for debugging
-                logger.warn(`S3 deletion failed`, {
-                    functionId,
-                    bucket: process.env.BUCKET_NAME,
-                    s3Key: item.Item.s3Key.S,
-                    errorName: s3Error.name,
-                    errorCode: s3Error.Code || s3Error.$metadata?.httpStatusCode,
-                    errorMessage: s3Error.message
-                });
+                // Include all details in the message for UI visibility
+                const errInfo = `bucket=${process.env.BUCKET_NAME}, key=${item.Item.s3Key.S}, error=${s3Error.name}: ${s3Error.message}`;
+                logger.warn(`S3 deletion failed: ${errInfo}`, { functionId });
             }
         }
 
