@@ -189,7 +189,10 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                                 ":inc": { N: "1" },
                                 ":dur": { N: duration.toString() }
                             }
-                        })).catch(err => console.error("Failed to increment stats", err));
+                        })).then(() => console.log(`[STATS] Updated stats for ${result.functionId}`))
+                            .catch(err => console.error("[STATS] Failed to increment stats:", err));
+                    } else {
+                        console.error("[STATS] No TABLE_NAME defined");
                     }
                 }
 
