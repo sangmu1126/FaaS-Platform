@@ -37,6 +37,9 @@ class ContainerManager:
         # Pre-pull images
         self._ensure_images()
         
+        # PID Cache (Global)
+        self.pid_cache = {}
+
         # Initialize pools
         self._initialize_warm_pool()
 
@@ -67,6 +70,11 @@ class ContainerManager:
                 cpu_quota=100000 
             )
             c.pause()
+            
+            # Cache PID immediately (requires reload since 'run' might not populate attrs fully initially)
+            c.reload()
+            self.pid_cache[c.id] = c.attrs['State']['Pid']
+            
             self.pools[runtime].append(c.id)
             return c.id
         except Exception as e:
@@ -227,11 +235,18 @@ class ContainerManager:
     def get_network_stats(self, container) -> tuple:
         """Returns (rx_bytes, tx_bytes) from /proc/{pid}/net/dev"""
         try:
-            # Refresh to ensure we have the PID
-            if 'State' not in container.attrs or 'Pid' not in container.attrs['State'] or container.attrs['State']['Pid'] == 0:
-                 container.reload()
+            pid = self.pid_cache.get(container.id)
+            if not pid:
+                # Fallback
+                try:
+                    container.reload()
+                    pid = container.attrs['State']['Pid']
+                    self.pid_cache[container.id] = pid
+                except: return 0, 0
             
-            pid = container.attrs['State']['Pid']
+            if not os.path.exists(f"/proc/{pid}"):
+                return 0, 0
+
             rx = 0
             tx = 0
             path = f"/proc/{pid}/net/dev"
