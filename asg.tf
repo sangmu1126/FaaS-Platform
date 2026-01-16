@@ -151,6 +151,17 @@ resource "aws_autoscaling_group" "worker" {
     propagate_at_launch = true
   }
 
+  # Enable CloudWatch metrics for Target Tracking Scaling
+  enabled_metrics = [
+    "GroupMinSize",
+    "GroupMaxSize",
+    "GroupDesiredCapacity",
+    "GroupInServiceInstances",
+    "GroupPendingInstances",
+    "GroupTerminatingInstances",
+    "GroupTotalInstances"
+  ]
+
   depends_on = [aws_elasticache_cluster.redis]
 }
 
