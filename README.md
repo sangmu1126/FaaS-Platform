@@ -198,6 +198,20 @@ Used **Target Tracking Scaling** based on `BacklogPerInstance` metric.
 
 ---
 
+## 📁 Directory Structure
+
+| Directory | Description |
+|-----------|-------------|
+| `Infra-terraform` | Infrastructure-as-Code (VPC, EC2 ASG, SQS, ElastiCache, VPC Endpoints) |
+| `Infra-controller` | Controller Service (Node.js Express API Gateway with Rate Limiting) |
+| `Infra-worker` | Worker Agent (Python executor with Docker Warm Pool & Auto-Tuner) |
+| `Infra-AInode` | AI Node integration (Ollama SDK for local LLM inference) |
+| `Infra-packer` | Packer scripts for pre-baked Worker AMI automation |
+| `application` | Frontend (React/Vite) & Backend (Gateway) for the management dashboard |
+| `tests` | Load testing (K6), E2E, and integration test scripts |
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
