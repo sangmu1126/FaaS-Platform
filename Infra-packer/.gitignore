@@ -1,0 +1,8 @@
+# Packer
+.packer_plugins/
+packer_cache/
+*.log
+
+# System
+.DS_Store
+Thumbs.db
