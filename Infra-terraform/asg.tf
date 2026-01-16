@@ -77,7 +77,7 @@ data "aws_ami" "custom_worker" {
 
   filter {
     name   = "name"
-    values = ["faas-worker"]
+    values = ["faas-worker*"]  # Matches faas-worker, faas-worker-fixed-*, etc.
   }
 }
 
@@ -150,6 +150,17 @@ resource "aws_autoscaling_group" "worker" {
     value               = "${var.project_name}-worker"
     propagate_at_launch = true
   }
+
+  # Enable CloudWatch metrics for Target Tracking Scaling
+  enabled_metrics = [
+    "GroupMinSize",
+    "GroupMaxSize",
+    "GroupDesiredCapacity",
+    "GroupInServiceInstances",
+    "GroupPendingInstances",
+    "GroupTerminatingInstances",
+    "GroupTotalInstances"
+  ]
 
   depends_on = [aws_elasticache_cluster.redis]
 }
