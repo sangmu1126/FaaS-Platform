@@ -178,6 +178,22 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                         TableName: process.env.LOGS_TABLE_NAME,
                         Item: logItem
                     })).catch(err => console.error("Failed to persist log to DynamoDB", err));
+
+                    // Increment Invocations & Total Duration (for Avg Latency)
+                    if (process.env.TABLE_NAME) {
+                        db.send(new UpdateItemCommand({
+                            TableName: process.env.TABLE_NAME,
+                            Key: { functionId: { S: result.functionId } },
+                            UpdateExpression: "ADD invocations :inc, totalDuration :dur",
+                            ExpressionAttributeValues: {
+                                ":inc": { N: "1" },
+                                ":dur": { N: duration.toString() }
+                            }
+                        })).then(() => console.log(`[STATS] Updated stats for ${result.functionId}`))
+                            .catch(err => console.error("[STATS] Failed to increment stats:", err));
+                    } else {
+                        console.error("[STATS] No TABLE_NAME defined");
+                    }
                 }
 
                 // Add to In-Memory Buffer
@@ -613,6 +629,9 @@ app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res)
             runtime: item.runtime ? item.runtime.S : "python",
             memoryMb: item.memoryMb ? parseInt(item.memoryMb.N) : 128,
             invocations: item.invocations ? parseInt(item.invocations.N) : 0,
+            avgDuration: (item.invocations && parseInt(item.invocations.N) > 0 && item.totalDuration)
+                ? Math.round(parseInt(item.totalDuration.N) / parseInt(item.invocations.N))
+                : 0,
             uploadedAt: item.uploadedAt ? item.uploadedAt.S : new Date().toISOString()
         }));
         res.json(items);
@@ -825,13 +844,28 @@ app.delete(['/functions/:id', '/api/functions/:id'], cors(), authenticate, async
         });
         const item = await db.send(getCmd);
 
-        if (item.Item && item.Item.s3Key) {
-            await s3.send(new DeleteObjectCommand({
-                Bucket: process.env.BUCKET_NAME,
-                Key: item.Item.s3Key.S
-            }));
+        // Check if function exists
+        if (!item.Item) {
+            logger.warn(`Function not found for deletion`, { functionId });
+            return res.status(404).json({ error: "Function not found", functionId });
         }
 
+        // Try to delete S3 object (non-blocking - continue even if S3 fails)
+        if (item.Item.s3Key && item.Item.s3Key.S) {
+            try {
+                await s3.send(new DeleteObjectCommand({
+                    Bucket: process.env.BUCKET_NAME,
+                    Key: item.Item.s3Key.S
+                }));
+                logger.info(`S3 object deleted`, { functionId, s3Key: item.Item.s3Key.S });
+            } catch (s3Error) {
+                // Include all details in the message for UI visibility
+                const errInfo = `bucket=${process.env.BUCKET_NAME}, key=${item.Item.s3Key.S}, error=${s3Error.name}: ${s3Error.message}`;
+                logger.warn(`S3 deletion failed: ${errInfo}`, { functionId });
+            }
+        }
+
+        // Delete from DynamoDB
         await db.send(new DeleteItemCommand({
             TableName: process.env.TABLE_NAME,
             Key: { functionId: { S: functionId } }
