@@ -15,7 +15,7 @@ This project adopts an **Event-Driven Microservices Architecture**, decoupling t
 ```mermaid
 graph LR
     User[User/Client] -- HTTP --> ALB(Load Balancer)
-    ALB -- Route --> Controller[Controller Service<br>(Node.js)]
+    ALB -- Route --> Controller["Controller Service (Node.js)"]
     
     subgraph Control Plane
     Controller -- Push Job --> SQS(AWS SQS Queue)
@@ -23,7 +23,7 @@ graph LR
     end
     
     subgraph Compute Plane
-    SQS -- Pull Job --> Worker[Worker Service<br>(Python)]
+    SQS -- Pull Job --> Worker["Worker Service (Python)"]
     Worker -- Pub Result --> Redis
     Worker -- Logs --> DynamoDB
     end
@@ -63,6 +63,22 @@ Instead of simple Step Scaling (e.g., "Add 1 instance if SQS > 100"), we employ 
 
 > **Design Note:** The 0.5 gap between AlarmHigh (>5) and AlarmLow (<4.5) prevents **thrashing** (rapid scale-out/in oscillation).
 
+### 3.4. Warm Pool (Zero Cold Start)
+Pre-warmed containers eliminate the latency of container creation at runtime.
+
+*   **Design**: Each Worker maintains a pool of idle containers for each runtime (Python, Node.js, C++, Go).
+*   **Execution Flow**: Job arrives → Acquire container from pool → Execute → Return to pool.
+*   **Result**: Function startup time reduced from **~3s to <100ms** (95% improvement).
+
+```mermaid
+graph LR
+    Job[New Job] --> Pool{Warm Pool}
+    Pool -->|Available| Container[Idle Container]
+    Pool -->|Empty| Create[Create New Container]
+    Container --> Execute[Execute Code]
+    Execute --> Return[Return to Pool]
+```
+
 ## 4. Infrastructure (AWS)
 - **Compute**: EC2 Auto Scaling Group (Launch Template with UserData).
 - **Queue**: SQS Standard (Decoupling Control Plane from Data Plane).
@@ -81,3 +97,13 @@ We evolved our deployment strategy to balance **Security** and **Development Vel
     *   **OS/Dependencies**: Still managed via Immutable AMI (Base Layer).
     *   **Application Code**: Stored in a secure **S3 Bucket** and injected into Workers via **VPC Endpoint** at boot time (`user_data`).
 *   **Result**: Reduced deployment time from **15 mins** to **<1 min** (S3 Upload + Instance Refresh), while maintaining strict security compliance (no NAT Gateway/Internet needed).
+
+### 4.2. Network Security (Zero NAT Architecture)
+Workers operate in a fully isolated network environment without internet access.
+
+*   **Private Subnet**: Workers deployed in `10.0.10.0/24` (no public IP).
+*   **VPC Endpoints**: Access AWS services securely without NAT Gateway.
+    *   **Gateway Endpoints**: S3, DynamoDB (Free)
+    *   **Interface Endpoints**: SQS, SSM
+*   **Cost Saving**: NAT Gateway (~$32/month) completely avoided.
+*   **Security Benefit**: Workers **cannot initiate outbound internet connections**, preventing data exfiltration.
