@@ -132,12 +132,12 @@ This project is a **proprietary FaaS (Function as a Service) platform** built fr
 
 | Directory | Description | Upstream Repository |
 |-----------|-------------|---------------------|
-| `Infra-terraform` | Infrastructure-as-Code (VPC, EC2, SQS, VPC Endpoints) | [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/sangmu1126/Infra-terraform) |
-| `Infra-controller` | Controller Service (Node.js API Gateway) | [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/sangmu1126/Infra-controller) |
-| `Infra-worker` | Worker Agent (Python, Docker Warm Pool) | [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/sangmu1126/Infra-worker) |
-| `Infra-AInode` | AI Node integration (Ollama SDK) | [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/sangmu1126/Infra-AInode) |
-| `Infra-packer` | Packer scripts for Worker AMI | [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/sangmu1126/Infra-packer) |
-| `application` | Frontend (React) & Backend Gateway | [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/sangmu1126/FaaS-Application) |
+| `Infra-terraform` | Infrastructure-as-Code (VPC, EC2, SQS, VPC Endpoints) | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-terraform](https://github.com/sangmu1126/Infra-terraform) |
+| `Infra-controller` | Controller Service (Node.js API Gateway) | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-controller](https://github.com/sangmu1126/Infra-controller) |
+| `Infra-worker` | Worker Agent (Python, Docker Warm Pool) | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-worker](https://github.com/sangmu1126/Infra-worker) |
+| `Infra-AInode` | AI Node integration (Ollama SDK) | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-AInode](https://github.com/sangmu1126/Infra-AInode) |
+| `Infra-packer` | Packer scripts for Worker AMI | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-packer](https://github.com/sangmu1126/Infra-packer) |
+| `application` | Frontend (React) & Backend Gateway | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [FaaS-Application](https://github.com/sangmu1126/FaaS-Application) |
 | `tests` | Load testing (K6), E2E scripts | *(local only)* |
 
 ---
