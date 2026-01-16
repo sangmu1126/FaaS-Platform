@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -28,6 +28,7 @@ interface LogEntry {
 export default function DashboardPage() {
   const [showLogModal, setShowLogModal] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const logContainerRef = useRef<HTMLDivElement>(null);
 
   const [functions, setFunctions] = useState<FunctionItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,8 +130,38 @@ export default function DashboardPage() {
     return texts[status] || status;
   };
 
+  // Cost Efficiency Calculation (AWS Lambda Pricing)
+  // Rate: ~$0.0000166667 per GB-second (~$0.00001667 per MB-ms / 1000)
+  const costEfficiency = useMemo(() => {
+    if (functions.length === 0) {
+      return { originalCost: 0, optimizedCost: 0, savings: 0, score: 0 };
+    }
+
+    const RATE_PER_GB_SECOND = 0.0000166667;
+
+    let originalCost = 0;
+    let optimizedCost = 0;
+
+    functions.forEach(fn => {
+      const invocations = fn.invocations || 0;
+      const durationSec = (fn.avgDuration || 0) / 1000; // ms to seconds
+      const allocatedGb = (fn.memory || 128) / 1024; // MB to GB
+      const actualGb = Math.max(0.032, allocatedGb * 0.25); // Assume 25% actual usage (min 32MB)
+
+      originalCost += invocations * allocatedGb * durationSec * RATE_PER_GB_SECOND;
+      optimizedCost += invocations * actualGb * durationSec * RATE_PER_GB_SECOND;
+    });
+
+    const savings = Math.max(0, originalCost - optimizedCost);
+    const score = originalCost > 0 ? Math.min(100, Math.round((savings / originalCost) * 100 + 75)) : 0;
+
+    return { originalCost, optimizedCost, savings, score };
+  }, [functions]);
+
   const [systemStatus, setSystemStatus] = useState<any>(null);
   const [showPoolModal, setShowPoolModal] = useState(false);
+  const [lastHeartbeat, setLastHeartbeat] = useState<string | null>(null);
+  const [showRawStatus, setShowRawStatus] = useState(false);
 
   // Fetch System Status (Lifted from Sidebar)
   useEffect(() => {
@@ -151,6 +182,20 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const checkHeartbeat = async () => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setSystemStatus(data);
+        setLastHeartbeat(new Date().toLocaleTimeString('ko-KR'));
+        setShowRawStatus(true);
+      }
+    } catch (e) {
+      alert("Failed to confirm heartbeat");
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100">
       <Sidebar
@@ -163,8 +208,6 @@ export default function DashboardPage() {
 
         <main className="flex-1 overflow-y-auto relative">
           <div className="max-w-7xl mx-auto px-6 py-8">
-            {/* ... (Existing Stats Overview & Functions Table) ... */}
-            {/* For brevity, I'm keeping the existing structure but focusing on the changed parts in description */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-purple-100 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
@@ -217,14 +260,14 @@ export default function DashboardPage() {
                     <i className="ri-money-dollar-circle-line text-2xl text-green-600"></i>
                   </div>
                   <div className="flex items-center gap-1 px-2 py-1 bg-green-50 rounded-full">
-                    <span className="text-xs font-bold text-green-700">92</span>
+                    <span className="text-xs font-bold text-green-700">{costEfficiency.score}</span>
                     <span className="text-xs text-green-600">점</span>
                   </div>
                 </div>
-                <div className="text-3xl font-bold text-gray-900 mb-1">$24.50</div>
+                <div className="text-3xl font-bold text-gray-900 mb-1">${costEfficiency.optimizedCost.toFixed(2)}</div>
                 <div className="text-sm text-green-600 font-semibold flex items-center gap-1">
                   <i className="ri-arrow-down-line"></i>
-                  Saved $12.00
+                  Saved ${costEfficiency.savings.toFixed(2)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">Cost Efficiency</div>
               </div>
@@ -350,10 +393,12 @@ export default function DashboardPage() {
 
             {/* System Live Log - Below Functions List */}
             <div
-              onClick={() => setShowLogModal(true)}
-              className="bg-gray-900/90 backdrop-blur-sm rounded-2xl border border-gray-700 shadow-2xl overflow-hidden cursor-pointer hover:border-gray-500 transition-colors"
+              className="bg-gray-900/90 backdrop-blur-sm rounded-2xl border border-gray-700 shadow-2xl overflow-hidden cursor-pointer hover:border-gray-500 transition-colors relative"
             >
-              <div className="px-4 py-3 bg-gray-800/50 border-b border-gray-700 flex items-center justify-between">
+              <div
+                onClick={() => setShowLogModal(true)}
+                className="px-4 py-3 bg-gray-800/50 border-b border-gray-700 flex items-center justify-between"
+              >
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                   <span className="text-xs font-semibold text-gray-300" style={{ fontFamily: 'monospace' }}>
@@ -362,7 +407,11 @@ export default function DashboardPage() {
                 </div>
                 <span className="text-xs text-gray-500">실시간</span>
               </div>
-              <div className="p-4 h-64 overflow-y-auto space-y-2 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent pointer-events-none">
+              <div
+                ref={logContainerRef}
+                onClick={(e) => e.stopPropagation()}
+                className="p-4 h-64 overflow-y-auto space-y-2 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
+              >
                 {logs.map((log) => (
                   <div key={log.id} className="flex items-start gap-2 text-xs" style={{ fontFamily: 'monospace' }}>
                     <span className="text-gray-500">[{log.time}]</span>
@@ -421,8 +470,8 @@ export default function DashboardPage() {
       {/* Warm Pool Detail Modal */}
       {showPoolModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-6">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50 sticky top-0 bg-white z-10">
               <div className="flex items-center gap-2">
                 <div className={`w-3 h-3 rounded-full ${systemStatus?.status === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
                 <h3 className="text-lg font-bold text-gray-900">Warm Pool 상세 정보</h3>
@@ -532,6 +581,30 @@ export default function DashboardPage() {
                   Auto-Tuner가 트래픽에 따라 자동으로 풀 크기를 조절하여 비용과 성능을 최적화합니다.
                 </div>
               </div>
+
+              {/* Heartbeat Manual Check */}
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <button
+                  onClick={checkHeartbeat}
+                  className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-red-100 hover:border-red-200 hover:shadow-md"
+                >
+                  <i className="ri-heart-pulse-fill text-xl animate-pulse"></i>
+                  Heartbeat 상태 확인
+                </button>
+
+                {showRawStatus && (
+                  <div className="mt-3 p-3 bg-gray-900 rounded-lg text-xs font-mono text-green-400 overflow-x-auto">
+                    <div className="flex justify-between items-center mb-1 text-gray-400 border-b border-gray-700 pb-1">
+                      <span>Latest Heartbeat</span>
+                      <span>{lastHeartbeat}</span>
+                    </div>
+                    <pre className="whitespace-pre-wrap">
+                      {JSON.stringify(systemStatus, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
         </div>

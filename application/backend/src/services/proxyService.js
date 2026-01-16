@@ -193,14 +193,18 @@ export const proxyService = {
         // Now we fetch status from Controller which aggregates worker heartbeats
         const status = await this.fetch('/system/status');
 
-        // Controller returns: { status, worker_count, pools, uptime_seconds, active_jobs }
+        // Controller returns: { status, uptime, worker: { count, pools, activeJobs, details } }
         if (status && status.status === 'online') {
+            const workerCount = status.worker?.count || status.worker_count || 0;
+            const workerPools = status.worker?.pools || status.pools || {};
+            const activeJobs = status.worker?.activeJobs || status.active_jobs || 0;
+
             return {
-                status: status.worker_count > 0 ? 'online' : 'degraded',
-                uptime_seconds: status.uptime_seconds || 0,
-                active_workers: status.worker_count || 0,
-                active_jobs: status.active_jobs || 0,
-                pools: status.pools || {}
+                status: workerCount > 0 ? 'online' : 'degraded',
+                uptime_seconds: status.uptime || status.uptime_seconds || 0,
+                active_workers: workerCount,
+                active_jobs: activeJobs,
+                pools: workerPools
             };
         }
         return { status: 'unknown', pools: {} };

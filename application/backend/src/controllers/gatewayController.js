@@ -37,6 +37,8 @@ export const gatewayController = {
                     createdAt: awsFn.createdAt || awsFn.uploadedAt || null,
                     uploadedAt: awsFn.uploadedAt || null,
                     memoryMb: awsFn.memoryMb || 128,
+                    invocations: awsFn.invocations || 0,
+                    avgDuration: awsFn.avgDuration || 0,
                     local_stats: local
                 };
             });
