@@ -268,3 +268,94 @@ git config --global --add safe.directory /home/ec2-user/faas-controller
 
 ---
 
+## 9. 🐛 Fix: Worker 등록 실패 및 의존성 이슈 (2026-01-05)
+
+### 🔴 문제 상황
+*   **증상:** Controller의 `/system/status`가 `offline`으로 표시되며 Worker가 등록되지 않음.
+*   **로그:**
+    ```json
+    {"pools":{"python":0,"nodejs":0,"cpp":0,"go":0},"active_jobs":0,"status":"offline"}
+    ```
+
+### 🔍 원인 및 해결 (Troubleshooting)
+
+#### 1. `ModuleNotFoundError: boto3`
+*   **원인:** AMI에 Python 3.11용 `boto3`만 설치되었으나, systemd 서비스는 `/usr/bin/python3` (3.9)를 사용.
+*   **해결:** Builder에서 `sudo /usr/bin/python3 -m pip install boto3` 실행.
+
+#### 2. `ModuleNotFoundError: redis`, `structlog`
+*   **원인:** `requirements.txt`의 일부 의존성이 누락됨.
+*   **해결:** `sudo /usr/bin/python3 -m pip install -r requirements.txt`로 전체 재설치.
+
+#### 3. `Failed to load environment files`
+*   **원인:** AMI 생성 시 `cloud-init` 상태를 리셋하지 않아, 새 인스턴스에서 `user_data`가 실행되지 않음 (따라서 `.env` 파일 미생성).
+*   **해결:** AMI 생성 전 필수 명령 실행:
+    ```bash
+    sudo cloud-init clean --logs --seed
+    ```
+
+### 🏛️ Worker 부팅 아키텍처 (Boot Flow)
+```
+1. ASG가 새 Worker 인스턴스 시작
+           │
+           ▼
+2. user_data_worker.sh 실행
+   ├── .env 파일 생성 (Terraform 변수 주입)
+   └── faas-worker.service 시작
+           │
+           ▼
+3. agent.py 시작
+   ├── Docker Warm Pool 초기화
+   ├── Controller에 Heartbeat 전송
+   └── SQS 폴링 시작
+           │
+           ▼
+4. Controller가 Worker 등록 (status: online)
+```
+
+### 📚 교훈 (Lessons Learned)
+1.  **AMI 생성 전 `cloud-init clean` 필수**: 이를 생략하면 `user_data` 스크립트가 실행되지 않아 초기 설정이 실패합니다.
+
+### 🛠️ AMI 생성 절차 (Reference)
+```bash
+# 1. Builder 인스턴스 준비 (Public Subnet)
+#    - Docker, Python, Git 설치 및 코드 복사
+#    - 의존성 설치: sudo pip3 install -r requirements.txt
+
+# 2. cloud-init 리셋 (필수!)
+sudo cloud-init clean --logs --seed
+
+# 3. AMI 생성 (AWS CLI)
+aws ec2 create-image --instance-id <BUILDER_ID> --name "faas-worker" --no-reboot
+```
+
+---
+
+## 10. 🏗️ Configuration Reference
+
+### 주요 설정 파일 (Key Configs)
+| 파일 | 경로 | 용도 |
+|------|------|------|
+| `asg.tf` | Infra-terraform/ | Worker ASG, Launch Template 정의 |
+| `controller_asg.tf` | Infra-terraform/ | Controller ASG 정의 |
+| `user_data_worker.sh` | Infra-terraform/ | Worker 부팅 스크립트 (.env 생성) |
+| `infra-worker.service` | Infra-worker/ | Worker systemd 서비스 유닛 |
+| `agent.py` | Infra-worker/ | Worker 메인 에이전트 로직 |
+
+---
+
+## 11. 📝 Performance Report: VPC Migration Impact
+
+### 🛑 Latency Change Analysis
+*   **Before (Public Subnet): ~80ms**
+*   **After (Private Subnet): ~140ms**
+*   **Delta:** +60ms increased latency.
+
+### 🔍 Root Cause
+보안을 위해 **Private Subnet**으로 이전하면서 네트워크 토폴로지가 변경되었습니다.
+1.  **Public Access**: Direct Access (Fast but Insecure).
+2.  **Private Access**: NAT/Routing + ASG Overhead (Secure but slower).
+
+### ✅ 결론 (Verdict)
+60ms의 지연 시간 증가는 **프로덕션 레벨의 보안(Security)과 확장성(Scalability)**을 얻기 위한 필수적인 Trade-off로 판단됩니다. 실제 코드 실행이나 폴링 주기(Polling Interval)에는 영향이 없음을 확인했습니다.
+
