@@ -78,25 +78,25 @@ Supports precise usage tracking for a "Pay-per-Token" model.
 - **Ollama** (AI Node Backend)
 - **AWS Account** (SQS, DynamoDB, S3)
 
-### Installation & Run
+### Integration Guide
 
-#### 1. Run Controller
-```bash
-cd Infra-AInode
-npm install
-npm start
-# Server running on http://localhost:8080
-```
+#### 1. External AI Integration (Mock/Real)
+This module is designed to interface with any **OpenAI-compatible** inference engine (e.g., Ollama, vLLM, or OpenAI API).
+- **Default Endpoint**: `http://10.0.20.100:11434` (Ollama Internal IP)
+- **Protocol**: HTTP/REST
+- **Role**: This repository provides the **Client SDK Specification** and integration patterns.
 
-#### 2. Run Worker Agent
+#### 2. Worker Agent Setup (Consumer)
+The `ai_client.py` is automatically injected into Worker containers.
+
 ```bash
-# Setup Venv
+# Test the SDK locally
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install requests
 
-# Start Agent
-python agent.py
+# Run interactive test
+python ai_client.py
 ```
 
 ---
