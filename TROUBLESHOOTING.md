@@ -97,7 +97,7 @@ with open(temp_tar, "wb") as f:
 
 ## 6. 🚀 Performance: The 1100ms Latency Mystery (Deep Dive)
 
-### 📊 Performance Timeline
+### � Performance Timeline
 | 단계 | Latency | 병목 원인 | 비고 |
 |:---:|:---:|:---|:---|
 | **Initial** | **2500ms** | 컨테이너 생성 및 코드 컴파일 | Cold Start |
@@ -267,3 +267,4 @@ git config --global --add safe.directory /home/ec2-user/faas-controller
 *   **user_data에 방어 코드:** 위 코드를 항상 포함시켜 어떤 상황에서도 권한 문제 방지.
 
 ---
+

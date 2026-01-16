@@ -60,7 +60,7 @@ graph TD
 - **Solution:** 
   - Used **Auto Scaling Group (min=1, max=1)**.
   - If Controller fails, ASG launches a replacement automatically.
-  - **Self-Healing IP:** New instance automatically runs `aws ec2 associate-address` to attach the static Elastic IP (`[YOUR_ELASTIC_IP]`) on boot.
+  - **Self-Healing IP:** New instance automatically runs `aws ec2 associate-address` to attach the static Elastic IP (`13.209.30.223`) on boot.
 
 ### 3. Worker Health Checks (NAT-Free)
 - **Problem:** ALB Health Check costs money; NAT Gateway is expensive for Workers to "phone home".

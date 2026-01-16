@@ -33,7 +33,7 @@ Targeting `127.0.0.1:8080` with 4x capacity (200 VUs). Simulating DDoS/Traffic S
     *   **Fast Failure**: Blocked requests were rejected in <150ms, preserving resources for valid requests.
 
 ### 3. Cloud Production Test (Real-world)
-Targeting AWS EC2 Controller (`[YOUR_CONTROLLER_IP]`). Simulating real user traffic.
+Targeting AWS EC2 Controller (`13.209.30.223`). Simulating real user traffic.
 
 *   **Status**: ✅ **VERIFIED**
 *   **Execution**:

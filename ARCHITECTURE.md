@@ -13,114 +13,23 @@ This project adopts an **Event-Driven Microservices Architecture**, decoupling t
 
 ### Architecture Diagram
 ```mermaid
-graph TD
-    %% 🎨 Style Definitions
-    classDef client fill:#333,stroke:#fff,stroke-width:2px,color:#fff
-    classDef control fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
-    classDef worker fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
-    classDef aws fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100
-    classDef storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
-    classDef ai fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f
-    classDef monitor fill:#e0f7fa,stroke:#006064,stroke-width:2px,color:#006064
-    classDef empty width:0px,height:0px,stroke:none,fill:none,color:none
-
-    %% 🌐 External World
-    User[User / Client]:::client -->|HTTPS POST /run| ALB(ALB / Elastic IP):::aws
-    AINode[AI Node / Ollama]:::ai
+graph LR
+    User[User/Client] -- HTTP --> ALB(Load Balancer)
+    ALB -- Route --> Controller[Controller Service<br>(Node.js)]
     
-    %% ☁️ AWS VPC Boundary
-    subgraph "AWS VPC"
-        direction TB
-        
-        %% 1. Shared Managed Services
-        subgraph "Shared Services<br>(VPC Endpoints & Gateway)"
-            direction TB
-            SQS[AWS SQS - Job Queue]:::aws
-            Redis_Global[(Redis Cluster)]:::storage
-            S3[(AWS S3)]:::storage
-            DDB[(DynamoDB)]:::storage
-        end
-        
-        %% 2. Monitoring Stack
-        subgraph "Observability"
-            direction TB
-            Prom[Prometheus]:::monitor
-            CW[CloudWatch]:::monitor
-        end
-
-        %% 3. Control Plane
-        subgraph "Public Subnet<br>(Control Plane)"
-            direction TB
-            %% Spacer to force Title visibility
-            Space1[ ]:::empty
-            
-            Controller[Controller Service]:::control
-            
-            %% Internal Logic
-            RateLimit{Rate Limiter}:::control
-            Auth{Auth Guard}:::control
-            
-            Space1 ~~~ Controller
-            Controller --> Auth
-            Auth -->|x-api-key Valid| RateLimit
-            RateLimit -->|Token Bucket Check| Redis_Global
-        end
-
-        %% 4. Compute Plane
-        subgraph "Private Subnet<br>(Compute Plane)"
-            direction TB
-            %% Spacer for Private Subnet Title
-            Space2[ ]:::empty
-            
-            Agent[Worker Agent]:::worker
-            
-            %% Worker Internals
-            subgraph "Worker Instance<br>(EC2)"
-                direction TB
-                %% Spacer for Instance Title
-                Space3[ ]:::empty
-                
-                WarmPool[Warm Pool]:::worker
-                Container[User Container]:::worker
-                AutoTuner[Auto-Tuner]:::worker
-                
-                Space3 ~~~ Agent
-            end
-            
-            Space2 ~~~ Agent
-        end
+    subgraph Control Plane
+    Controller -- Push Job --> SQS(AWS SQS Queue)
+    Controller -- State --> Redis(Redis Cache)
     end
     
-    %% Connections (Logic Flow)
-    %% Inbound
-    ALB -- Port 8080 --> Controller
-    Controller --> Auth
-    Auth --> RateLimit
-    RateLimit -->|Check| Redis_Global
+    subgraph Compute Plane
+    SQS -- Pull Job --> Worker[Worker Service<br>(Python)]
+    Worker -- Pub Result --> Redis
+    Worker -- Logs --> DynamoDB
+    end
     
-    %% Job Dispatch
-    RateLimit -->|Allowed| SQS
-    Controller -->|Upload Code| S3
-    
-    %% Worker Execution
-    Agent -->|1. Pop| SQS
-    Agent -->|2. Get| WarmPool
-    Agent -->|Download| S3
-    WarmPool -->|3. Run| Container
-    Container -->|Inference| AINode
-    Container -->|Feedback| AutoTuner
-    
-    %% Monitoring Flow (New)
-    Agent -.->|Metrics| Prom
-    Agent -.->|Logs| CW
-    Controller -.->|Metrics| Prom
-    
-    %% Reporting
-    Agent -->|Logs| DDB
-    Agent -->|Heartbeat| Controller
-    Container -->|Result| Redis_Global
-    Redis_Global -->|Sub| Controller
-    Controller -->|Response| User
+    Redis -- Sub Result --> Controller
+    Controller -- Response --> User
 ```
 
 ## 2. Component Design
@@ -143,18 +52,32 @@ Instead of simple Step Scaling (e.g., "Add 1 instance if SQS > 100"), we employ 
 - **Redis Shared Subscriber**: The Controller uses a single Redis connection for all response subscriptions (Pattern: Singleton/PubSub). This prevents connection leaks under high concurrency (verified v2.4).
 - **Rate Limiting**: Lua-based atomic counters in Redis prevent granular DDOS attacks ($O(1)$ complexity).
 
-### 3.3. Network Security (VPC)
-- **Isolation by Design**: Worker nodes reside in **Private Subnets** with no direct internet access (`0.0.0.0/0` route via NAT only if needed, but we use VPC Endpoints).
-- **Attack Surface Reduction**: The Control Plane (Public Subnet) is the only entry point. All internal specific components (S3, SQS, DynamoDB) are accessed via private **VPC Endpoints**.
+### 3.3. CloudWatch Alarms (Auto Scaling Triggers)
 
-### 3.4. Observability
-- **Metrics**: Prometheus scrapes `Controller` and `Worker` for RED metrics (Rate, Error, Duration).
-- **Logs**: CloudWatch Logs collects distributed logs for centralized troubleshooting.
-- **Traceability**: Unique `requestId` propagation across all microservices.
+| Alarm | Condition | Action | Purpose |
+|-------|-----------|--------|---------|
+| **AlarmHigh** | `backlog/instance > 5` | Scale-Out | Add Workers when overloaded |
+| **AlarmLow** | `backlog/instance < 4.5` | Scale-In | Remove idle Workers |
+| **sqs-high-backlog** | `Messages > 10` | Backup Scale-Out | Fast reaction fallback |
+| **sqs-low-backlog** | `Messages < 2` | Backup Scale-In | Aggressive cost saving |
+
+> **Design Note:** The 0.5 gap between AlarmHigh (>5) and AlarmLow (<4.5) prevents **thrashing** (rapid scale-out/in oscillation).
 
 ## 4. Infrastructure (AWS)
-- **Network**: VPC (Public/Private Subnets), VPC Endpoints (Gateway/Interface).
 - **Compute**: EC2 Auto Scaling Group (Launch Template with UserData).
 - **Queue**: SQS Standard (Decoupling Control Plane from Data Plane).
 - **Storage**: S3 (Code), DynamoDB (Metadata), Redis (Hot State).
-- **Monitoring**: CloudWatch, Prometheus.
+
+### 4.1. Deployment Strategy Evolution
+We evolved our deployment strategy to balance **Security** and **Development Velocity** in a high-security environment (Private Subnet).
+
+#### Phase 1: Immutable Infrastructure (Pre-baked AMI)
+*   **Approach**: All application code and dependencies were baked into an Amazon Machine Image (AMI).
+*   **Pros**: Maximize security and consistency. No external network dependency at runtime.
+*   **Cons**: AMI baking process took **>15 minutes**, causing a significant bottleneck in the development loop.
+
+#### Phase 2: Hybrid Deployment (S3 Code Injection)
+*   **Current Architecture**:
+    *   **OS/Dependencies**: Still managed via Immutable AMI (Base Layer).
+    *   **Application Code**: Stored in a secure **S3 Bucket** and injected into Workers via **VPC Endpoint** at boot time (`user_data`).
+*   **Result**: Reduced deployment time from **15 mins** to **<1 min** (S3 Upload + Instance Refresh), while maintaining strict security compliance (no NAT Gateway/Internet needed).
