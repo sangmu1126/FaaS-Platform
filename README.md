@@ -200,15 +200,18 @@ Used **Target Tracking Scaling** based on `BacklogPerInstance` metric.
 
 ## 📁 Directory Structure
 
-| Directory | Description |
-|-----------|-------------|
-| `Infra-terraform` | Infrastructure-as-Code (VPC, EC2 ASG, SQS, ElastiCache, VPC Endpoints) |
-| `Infra-controller` | Controller Service (Node.js Express API Gateway with Rate Limiting) |
-| `Infra-worker` | Worker Agent (Python executor with Docker Warm Pool & Auto-Tuner) |
-| `Infra-AInode` | AI Node integration (Ollama SDK for local LLM inference) |
-| `Infra-packer` | Packer scripts for pre-baked Worker AMI automation |
-| `application` | Frontend (React/Vite) & Backend (Gateway) for the management dashboard |
-| `tests` | Load testing (K6), E2E, and integration test scripts |
+> **Note:** Each component is developed in its own repository and synchronized here via `git subtree`. Check the upstream links for the latest updates.
+
+| Directory | Description | Upstream Repository |
+|-----------|-------------|---------------------|
+| `Infra-terraform` | Infrastructure-as-Code (VPC, EC2, SQS, VPC Endpoints) | [sangmu1126/Infra-terraform](https://github.com/sangmu1126/Infra-terraform) |
+| `Infra-controller` | Controller Service (Node.js API Gateway) | [sangmu1126/Infra-controller](https://github.com/sangmu1126/Infra-controller) |
+| `Infra-worker` | Worker Agent (Python, Docker Warm Pool) | [sangmu1126/Infra-worker](https://github.com/sangmu1126/Infra-worker) |
+| `Infra-AInode` | AI Node integration (Ollama SDK) | [sangmu1126/Infra-AInode](https://github.com/sangmu1126/Infra-AInode) |
+| `Infra-packer` | Packer scripts for Worker AMI | [sangmu1126/Infra-packer](https://github.com/sangmu1126/Infra-packer) |
+| `application` | Frontend (React) & Backend Gateway | [sangmu1126/FaaS-Application](https://github.com/sangmu1126/FaaS-Application) |
+| `tests` | Load testing (K6), E2E scripts | *(local only)* |
+
 
 ---
 
