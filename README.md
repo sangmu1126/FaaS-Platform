@@ -217,23 +217,41 @@ Used **Target Tracking Scaling** based on `BacklogPerInstance` metric.
 ## 🚀 Getting Started
 
 ### Prerequisites
--   AWS CLI configured
--   Terraform installed
--   Node.js & Python environments
+-   AWS CLI configured with appropriate credentials
+-   Terraform v1.0+ installed
+-   Node.js 18+ & Python 3.9+ environments
+-   Docker installed (for local testing)
 
-### Deployment (Terraform)
-The entire infrastructure is defined as code.
+### 1. Clone & Configure
+```bash
+# Clone the repository
+git clone https://github.com/sangmu1126/FaaS-Platform.git
+cd FaaS-Platform
+
+# Create environment file
+cp .env.example .env
+# Edit .env with your AWS settings (BUCKET_NAME, REDIS_HOST, etc.)
+```
+
+### 2. Deploy Infrastructure (Terraform)
 ```bash
 cd Infra-terraform
 terraform init
+terraform plan          # Review changes
 terraform apply -auto-approve
 ```
 
-### Running Tests
+### 3. Running Tests
 ```bash
 # Health Check
 node tests/test_health_aws.js
 
 # Load Test (Cloud)
 k6 run -e K6_BASE_URL=http://[YOUR_ELASTIC_IP]:8080/api tests/load_test_k6_cloud.js
+```
+
+### 4. Access the Dashboard
+After deployment, access the management dashboard at:
+```
+http://[YOUR_ELASTIC_IP]:3000
 ```
