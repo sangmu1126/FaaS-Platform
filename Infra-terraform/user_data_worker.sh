@@ -22,6 +22,7 @@ cat <<EOF > /home/ec2-user/faas-worker/.env
 AWS_REGION=${aws_region}
 SQS_URL=${sqs_url}
 BUCKET_NAME=${bucket_name}
+S3_USER_DATA_BUCKET=${bucket_name}
 TABLE_NAME=${table_name}
 REDIS_HOST=${redis_host}
 REDIS_PORT=6379
