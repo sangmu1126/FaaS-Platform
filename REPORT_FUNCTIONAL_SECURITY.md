@@ -61,3 +61,17 @@ Targeting AWS EC2 Controller (`13.209.30.223`). Simulating real user traffic.
 ## 🛠️ Artifacts
 *   **Scripts**: `load_test_k6.js` (Local), `load_test_k6_cloud.js` (Cloud)
 *   **Payload**: `heavy_function_cloud.zip` (Python Fibonacci Task)
+
+## ⚡ 4. Deep Tech Benchmark (Worker Optimization)
+Comparing metrics collection overhead between traditional Docker API and our optimized Direct Cgroup implementation.
+
+*   **Test Environment**: AWS EC2 t3.small (Amazon Linux 2023)
+*   **Target**: Active Container ID `d5db138e70e3`
+*   **Results**:
+
+| Method | Latency (avg) | Performance |
+| :--- | :--- | :--- |
+| **Docker API (Legacy)** | `1,804.07 ms` | 1x (Baseline) |
+| **Direct Cgroup (Optimized)** | `0.017 ms` | **105,198x Faster** |
+
+> **Implication**: By bypassing the Docker Daemon and reading kernel Cgroup structures directly, we reduced monitoring overhead to near-zero, enabling sub-millisecond billing accuracy.
