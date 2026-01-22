@@ -369,7 +369,20 @@ def run_comparison_benchmark(container_id: str) -> dict:
     # Benchmark Docker API (slow path - BEFORE optimization)
     print("\n📦 [BEFORE] Docker API container.stats() - Using library abstraction")
     print("   This is how most FaaS platforms collect metrics...")
-    docker_result = benchmark_docker_api(container_id, iterations=5)
+    
+    # Resolve full ID if possible (Cgroups need full ID)
+    full_id = container_id
+    try:
+        import docker
+        client = docker.from_env()
+        container = client.containers.get(container_id)
+        full_id = container.id
+        if container_id != full_id:
+             print(f"   (Resolved Short ID {container_id} -> Full ID {full_id[:12]}...)")
+    except Exception:
+        pass
+
+    docker_result = benchmark_docker_api(full_id, iterations=5)
     
     if docker_result["status"] != "OK":
         print(f"   ❌ Docker API failed: {docker_result.get('message', docker_result['status'])}")
@@ -381,7 +394,7 @@ def run_comparison_benchmark(container_id: str) -> dict:
     # Benchmark Direct Cgroup (fast path - AFTER optimization)
     print("\n⚡ [AFTER] Direct Cgroup Read - Kernel-level access")
     print("   Our Deep Tech optimization...")
-    cgroup_result = benchmark_direct_cgroup(container_id, iterations=10000)
+    cgroup_result = benchmark_direct_cgroup(full_id, iterations=10000)
     
     if cgroup_result["status"] != "OK":
         print(f"   ❌ Direct cgroup failed: {cgroup_result.get('message', cgroup_result['status'])}")
