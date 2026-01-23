@@ -87,7 +87,7 @@ Automated penetration test to verify container sandbox cannot access host resour
 | **Docker Socket** | ✅ SECURE | Socket not mounted (container escape blocked) |
 | **Host Process (PID)** | ✅ SECURE | PID namespace isolated |
 | **Network Namespace** | ✅ ISOLATED | Container network namespace active |
-| **Privilege Check** | ⚠️ WARNING | Running as root inside container (isolated) |
+| **Privilege Check** | ✅ SECURE | Running as non-root (UID: 1000) |
 | **Filesystem Mount** | ✅ SECURE | No dangerous host mounts detected |
 
 > **Conclusion**: All critical isolation checks passed. Container cannot escape to host or access sensitive resources.
