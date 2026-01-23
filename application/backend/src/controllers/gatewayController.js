@@ -194,36 +194,57 @@ export const gatewayController = {
         try {
             const functionId = req.params.id;
 
-            // 1. Get Prometheus-based metrics
+            // 1. Determine Time Window
+            const range = req.query.range || '24h';
+            const now = new Date();
+            let startTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // Default 24h
+
+            if (range === '1h') {
+                startTime = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            } else if (range === '7d') {
+                startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+            }
+
+            // 2. Fetch Prometheus Metrics (Global/Cumulative) - Still useful for "Total" context if needed, but we focus on Window
             const promMetrics = await proxyService.getPrometheusMetricsForFunction(functionId);
 
-            // 2. Get execution logs for additional context
+            // 3. Fetch Time-Filtered Logs (The Source of Truth for Windowed Metrics)
             let logs = [];
             try {
-                logs = await proxyService.fetch(`/api/functions/${functionId}/logs`);
+                // Pass startTime to efficient DynamoDB Query
+                logs = await proxyService.fetch(`/api/functions/${functionId}/logs?startTime=${startTime}&limit=1000`);
                 if (!Array.isArray(logs)) logs = [];
             } catch (e) {
                 logger.warn('Failed to fetch logs for metrics', { functionId, error: e.message });
             }
 
-            // 3. Calculate metrics from logs if Prometheus data is missing
+            // 4. Calculate Windowed Metrics from Logs
             const errorLogs = logs.filter(l => l.status === 'ERROR' || l.status === 'TIMEOUT').length;
             const successLogs = logs.filter(l => l.status === 'SUCCESS').length;
             const durations = logs.filter(l => l.duration > 0).map(l => l.duration);
-            const avgDurationFromLogs = durations.length > 0
+
+            const totalInvocations = successLogs + errorLogs;
+            const avgDuration = durations.length > 0
                 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
                 : 0;
 
-            // 4. Merge: Prometheus takes priority, fallback to log-based calculation
+            // 5. Success Rate Calculation
+            const successRate = totalInvocations > 0
+                ? Math.round((successLogs / totalInvocations) * 100)
+                : 100; // Default to 100 if no invocations in window
+
             const metrics = {
-                invocations: promMetrics.invocations || (successLogs + errorLogs),
-                avgDuration: promMetrics.avgDuration || avgDurationFromLogs,
-                errors: promMetrics.errors || errorLogs,
-                successRate: promMetrics.successRate || (successLogs + errorLogs > 0
-                    ? Math.round((successLogs / (successLogs + errorLogs)) * 10000) / 100
-                    : 100),
-                coldStarts: 0, // Not available in current implementation
-                recentExecutions: logs.slice(0, 10).map(l => ({
+                // Windowed Metrics (Priority)
+                invocations: totalInvocations,
+                avgDuration: avgDuration,
+                errors: errorLogs,
+                successRate: successRate,
+
+                // Keep cumulative for reference if needed (optional, could rename to total_*)
+                // For now, we override main fields to reflect the VIEW settings
+
+                coldStarts: 0,
+                recentExecutions: logs.slice(0, 1000).map(l => ({ // Return all fetched for charts
                     timestamp: l.timestamp,
                     duration: l.duration || 0,
                     status: l.status,
