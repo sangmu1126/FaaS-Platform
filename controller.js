@@ -23,6 +23,7 @@ const VERSION = "v2.8";
 // In-Memory Log Buffer (Ring Buffer)
 const logBuffer = [];
 const MAX_LOGS = 100;
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT || "100");
 
 function addLog(level, msg, context = {}) {
     const logEntry = {
@@ -243,14 +244,16 @@ const RATE_LIMIT_SCRIPT = `
     if current == 1 then redis.call("EXPIRE", KEYS[1], ARGV[1]) end
     return current
 `;
+
+
 const rateLimiter = async (req, res, next) => {
     try {
         const ip = req.ip || req.connection.remoteAddress;
         const key = `ratelimit:${ip}`;
         const current = await redis.eval(RATE_LIMIT_SCRIPT, 1, key, 60);
-        res.set('X-RateLimit-Limit', 100);
-        res.set('X-RateLimit-Remaining', Math.max(0, 100 - current));
-        if (current > 100) return res.status(429).json({ error: "Too Many Requests" });
+        res.set('X-RateLimit-Limit', RATE_LIMIT_MAX);
+        res.set('X-RateLimit-Remaining', Math.max(0, RATE_LIMIT_MAX - current));
+        if (current > RATE_LIMIT_MAX) return res.status(429).json({ error: "Too Many Requests" });
         next();
     } catch (error) { next(); }
 };
@@ -709,8 +712,10 @@ app.get('/api/functions/:id/logs', cors(), authenticate, async (req, res) => {
             })));
         }
 
-        const limit = parseInt(req.query.limit) || 20;
-        const command = new QueryCommand({
+        const limit = parseInt(req.query.limit) || 1000;
+        const startTime = req.query.startTime;
+
+        const params = {
             TableName: process.env.LOGS_TABLE_NAME,
             KeyConditionExpression: "functionId = :fid",
             ExpressionAttributeValues: {
@@ -718,7 +723,16 @@ app.get('/api/functions/:id/logs', cors(), authenticate, async (req, res) => {
             },
             ScanIndexForward: false, // Descending order (newest first)
             Limit: limit
-        });
+        };
+
+        // Efficient Filtering using Sort Key (timestamp)
+        if (startTime) {
+            params.KeyConditionExpression += " AND #ts >= :startTime";
+            params.ExpressionAttributeNames = { "#ts": "timestamp" };
+            params.ExpressionAttributeValues[":startTime"] = { S: startTime };
+        }
+
+        const command = new QueryCommand(params);
 
         const response = await db.send(command);
         const logs = response.Items.map(item => {
