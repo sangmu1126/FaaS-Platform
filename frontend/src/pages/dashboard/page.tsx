@@ -171,6 +171,8 @@ export default function DashboardPage() {
         if (res.ok) {
           const data = await res.json();
           setSystemStatus(data);
+          // Always update heartbeat time when data is fetched
+          setLastHeartbeat(new Date().toLocaleTimeString('ko-KR'));
         }
       } catch (e) {
         console.error("Failed to fetch system status");

@@ -16,7 +16,7 @@ export default function FunctionDetailPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [selectedTimeRange, setSelectedTimeRange] = useState('1h');
+  const [selectedTimeRange, setSelectedTimeRange] = useState('24h');
   const [logFilters, setLogFilters] = useState({
     level: 'all',
     search: ''
@@ -54,7 +54,7 @@ export default function FunctionDetailPage() {
       });
 
       // Fetch real metrics from backend API
-      const metricsRequest = functionApi.getMetrics(id).catch(err => {
+      const metricsRequest = functionApi.getMetrics(id, selectedTimeRange).catch(err => {
         console.warn('Failed to load metrics:', err);
         return null;
       });
@@ -74,9 +74,75 @@ export default function FunctionDetailPage() {
       const errorLogs = validLogs.filter((l: any) => l.level === 'error').length;
       const successLogs = validLogs.length - errorLogs;
 
+      // Generate time-series data from recent executions first to calculate fallback metrics
+      const executions = metricsData?.recentExecutions || [];
+      // Generate time-series data with zero-filling
+      let fallbackAvgDuration = 0;
+      let fallbackInvocations = 0;
+      const now = new Date();
+      // 0. Helper to get bucket start time
+      const getBucketStart = (ts: number, range: string): number => {
+        const d = new Date(ts);
+        if (range === '24h') {
+          d.setMinutes(0, 0, 0); // Hour bucket
+        } else if (range === '7d') {
+          d.setHours(0, 0, 0, 0); // Day bucket
+        } else {
+          d.setSeconds(0, 0); // Minute bucket
+        }
+        return d.getTime();
+      };
+
+      // 1. Define buckets and range based on selection
+      let bucketSizeMs = 60 * 1000; // 1m default
+      let startTimeMs = now.getTime() - 60 * 60 * 1000; // 1h ago default
+
+      if (selectedTimeRange === '24h') {
+        bucketSizeMs = 60 * 60 * 1000; // 1h
+        startTimeMs = now.getTime() - 24 * 60 * 60 * 1000;
+      } else if (selectedTimeRange === '7d') {
+        bucketSizeMs = 24 * 60 * 60 * 1000; // 1d
+        startTimeMs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+      }
+
+      // 2. Initialize all buckets with 0 using Timestamp Key
+      const timeMap = new Map<number, { count: number; totalDuration: number }>();
+
+      // Iterate from startTime to now, aligning to bucket size
+      // Align start time to bucket boundary first to avoid drift
+      let currentBucket = getBucketStart(startTimeMs, selectedTimeRange);
+      const endBucket = getBucketStart(now.getTime(), selectedTimeRange);
+
+      while (currentBucket <= endBucket) {
+        timeMap.set(currentBucket, { count: 0, totalDuration: 0 });
+        currentBucket += bucketSizeMs;
+      }
+
+      // 3. Fallback metrics calculation (if backend metrics missing)
+      if (executions.length > 0) {
+        const totalDur = executions.reduce((sum: number, e: any) => sum + (Number(e.duration) || 0), 0);
+        fallbackAvgDuration = Math.round(totalDur / executions.length);
+        fallbackInvocations = executions.length;
+
+        // 4. Fill data into buckets
+        executions.forEach((exec: any) => {
+          if (!exec.timestamp) return;
+          const execTime = new Date(exec.timestamp).getTime();
+
+          if (execTime < startTimeMs) return;
+
+          const bucketKey = getBucketStart(execTime, selectedTimeRange);
+          if (timeMap.has(bucketKey)) {
+            const entry = timeMap.get(bucketKey)!;
+            entry.count += 1;
+            entry.totalDuration += (Number(exec.duration) || 0);
+          }
+        });
+      }
+
       const uiMetrics = {
-        invocations: metricsData?.invocations ?? fnData?.invocations ?? 0,
-        avgDuration: metricsData?.avgDuration ?? 0,
+        invocations: metricsData ? metricsData.invocations : Math.max(fnData?.invocations || 0, fallbackInvocations),
+        avgDuration: metricsData ? metricsData.avgDuration : fallbackAvgDuration,
         coldStarts: metricsData?.coldStarts ?? 0,
         errors: metricsData?.errors ?? errorLogs,
         successRate: metricsData?.successRate ?? (validLogs.length > 0
@@ -87,39 +153,31 @@ export default function FunctionDetailPage() {
           : successLogs,
         errorCount: metricsData?.errors ?? errorLogs,
         memory: fnData?.memory || fnData?.memoryMb || 128,
-        // Include recent executions for time-series
         recentExecutions: metricsData?.recentExecutions || []
       };
 
-      // Generate time-series data from recent executions
-      const executions = metricsData?.recentExecutions || [];
-      if (executions.length > 0) {
-        // Group by minute and create time-series
-        const timeMap = new Map<string, { count: number; totalDuration: number }>();
-
-        executions.forEach((exec: any) => {
-          if (!exec.timestamp) return;
-          const date = new Date(exec.timestamp);
-          const timeKey = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-
-          if (!timeMap.has(timeKey)) {
-            timeMap.set(timeKey, { count: 0, totalDuration: 0 });
+      const sortedTsData = Array.from(timeMap.entries())
+        .map(([timestamp, data]) => {
+          const date = new Date(timestamp);
+          let label = '';
+          if (selectedTimeRange === '7d') {
+            label = date.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+          } else if (selectedTimeRange === '24h') {
+            label = `${date.getHours()}시`;
+          } else {
+            label = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
           }
-          const entry = timeMap.get(timeKey)!;
-          entry.count += 1;
-          entry.totalDuration += exec.duration || 0;
-        });
 
-        const tsData = Array.from(timeMap.entries())
-          .map(([time, data]) => ({
-            time,
+          return {
+            time: label,
             invocations: data.count,
-            avgDuration: data.count > 0 ? Math.round(data.totalDuration / data.count) : 0
-          }))
-          .sort((a, b) => a.time.localeCompare(b.time));
+            avgDuration: data.count > 0 ? Math.round(data.totalDuration / data.count) : 0,
+            timestamp: timestamp
+          };
+        })
+        .sort((a, b) => a.timestamp - b.timestamp);
 
-        setTimeSeriesData(tsData);
-      }
+      setTimeSeriesData(sortedTsData);
 
       setFunctionItem(fnData);
       setMetrics(uiMetrics);
@@ -141,7 +199,7 @@ export default function FunctionDetailPage() {
       interval = setInterval(loadData, 5000);
     }
     return () => clearInterval(interval);
-  }, [id, autoRefresh]);
+  }, [id, autoRefresh, selectedTimeRange]);
 
   // Derived data - Per-function logs are already execution results
   const recentInvocations = logs
@@ -536,6 +594,24 @@ export default function FunctionDetailPage() {
               {/* Overview Tab */}
               {activeTab === 'overview' && (
                 <div className="space-y-6">
+                  {/* Time Range Selector */}
+                  <div className="flex justify-end mb-4">
+                    <div className="bg-white p-1 rounded-lg border border-gray-200 flex gap-1 shadow-sm">
+                      {['1h', '24h', '7d'].map((range) => (
+                        <button
+                          key={range}
+                          onClick={() => setSelectedTimeRange(range)} // This triggers useEffect -> loadData
+                          className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${selectedTimeRange === range
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                            }`}
+                        >
+                          {range === '24h' ? '오늘' : range === '7d' ? '일주일' : '1시간'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Quick Stats */}
                   <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
@@ -767,6 +843,7 @@ export default function FunctionDetailPage() {
                                   borderRadius: '12px',
                                   border: '1px solid #E5E7EB'
                                 }}
+                                formatter={(value: number) => [`${value}회`, '실행 횟수']}
                               />
                               <Bar dataKey="invocations" fill="#3B82F6" radius={[4, 4, 0, 0]} name="실행 횟수" />
                             </BarChart>
@@ -801,6 +878,7 @@ export default function FunctionDetailPage() {
                                   borderRadius: '12px',
                                   border: '1px solid #E5E7EB'
                                 }}
+                                formatter={(value: number) => [`${value}ms`, '평균 응답 시간']}
                               />
                               <Line
                                 type="monotone"

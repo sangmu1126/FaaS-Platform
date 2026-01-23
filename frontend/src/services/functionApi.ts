@@ -37,8 +37,9 @@ export const functionApi = {
   },
 
   // Get function metrics
-  getMetrics: async (id: string): Promise<FunctionMetrics> => {
-    return apiClient.get<FunctionMetrics>(`/functions/${id}/metrics`);
+  getMetrics: async (id: string, range?: string): Promise<FunctionMetrics> => {
+    const query = range ? `?range=${range}` : '';
+    return apiClient.get<FunctionMetrics>(`/functions/${id}/metrics${query}`);
   },
 
   // Get Auto-Tuner recommendation
