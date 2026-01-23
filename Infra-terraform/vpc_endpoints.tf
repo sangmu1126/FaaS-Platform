@@ -91,3 +91,29 @@ resource "aws_vpc_endpoint" "ssm_endpoints" {
     Name = "${var.project_name}-${each.value}-endpoint"
   }
 }
+
+# 5. CloudWatch Monitoring & Logs Endpoints (ADDED)
+# Required for:
+# - monitoring: CloudWatch Metrics (PutMetricData)
+# - logs: CloudWatch Logs (PutLogEvents)
+locals {
+  cloudwatch_services = toset([
+    "monitoring",
+    "logs"
+  ])
+}
+
+resource "aws_vpc_endpoint" "cloudwatch_endpoints" {
+  for_each = local.cloudwatch_services
+
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.${each.value}"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name = "${var.project_name}-${each.value}-endpoint"
+  }
+}
