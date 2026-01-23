@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
 import { functionApi } from '../../services/functionApi';
@@ -43,6 +43,7 @@ export default function MetricsPage() {
         successRate: 100,
         activeWorkers: 0
     });
+    const prevMetricsRef = useRef({ totalRequests: 0, accumulatedDuration: 0 });
 
     // Parse Prometheus text format
     const parsePrometheusMetrics = (text: string) => {
@@ -177,14 +178,34 @@ export default function MetricsPage() {
                 // Better to just push the current point?
                 // Actually, let's keep it simple: Add point if we have data.
 
-                setTimeSeriesData(prev => {
+                setTimeSeriesData(prevSeries => {
+                    const latestMetrics = {
+                        totalRequests: dashboardStats?.totalExecutions || prometheusData.totalRequests || 0,
+                        avgDuration: dashboardStats?.avgResponseTime || prometheusData.avgDuration || 0
+                    };
+
+                    const prev = prevMetricsRef.current;
+                    let deltaRequests = 0;
+
+                    // Only calculate delta if we have a previous value (not first load)
+                    if (prev.totalRequests > 0) {
+                        deltaRequests = Math.max(0, latestMetrics.totalRequests - prev.totalRequests);
+                    }
+
+                    // Update Ref
+                    if (latestMetrics.totalRequests > 0) {
+                        prevMetricsRef.current = {
+                            totalRequests: latestMetrics.totalRequests,
+                            accumulatedDuration: 0
+                        };
+                    }
+
                     const newPoint = {
                         time: timeLabel,
-                        invocations: prometheusData.totalRequests || 0,
-                        avgDuration: prometheusData.avgDuration || 0
+                        invocations: deltaRequests,
+                        avgDuration: latestMetrics.avgDuration
                     };
-                    // Keep last 12 points
-                    const updated = [...prev, newPoint];
+                    const updated = [...prevSeries, newPoint];
                     return updated.length > 12 ? updated.slice(updated.length - 12) : updated;
                 });
 
@@ -292,7 +313,7 @@ export default function MetricsPage() {
                             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-200 shadow-sm">
                                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                                     <i className="ri-line-chart-line text-blue-600"></i>
-                                    호출 추이 (실시간)
+                                    호출 추이 (5초당 건수)
                                 </h3>
                                 <div className="h-64">
                                     <ResponsiveContainer width="100%" height="100%">
