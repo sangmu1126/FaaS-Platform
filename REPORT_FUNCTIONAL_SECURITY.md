@@ -75,3 +75,20 @@ Comparing metrics collection overhead between traditional Docker API and our opt
 | **Direct Cgroup (Optimized)** | `0.017 ms` | **105,198x Faster** |
 
 > **Implication**: By bypassing the Docker Daemon and reading kernel Cgroup structures directly, we reduced monitoring overhead to near-zero, enabling sub-millisecond billing accuracy.
+
+## 🔒 5. Container Isolation Security Scan
+Automated penetration test to verify container sandbox cannot access host resources.
+
+*   **Test Script**: `tests/controller/security_breakout.py`
+*   **Test Environment**: AWS EC2 Worker (Amazon Linux 2023)
+
+| Security Check | Status | Detail |
+| :--- | :--- | :--- |
+| **Docker Socket** | ✅ SECURE | Socket not mounted (container escape blocked) |
+| **Host Process (PID)** | ✅ SECURE | PID namespace isolated |
+| **Network Namespace** | ✅ ISOLATED | Container network namespace active |
+| **Privilege Check** | ⚠️ WARNING | Running as root inside container (isolated) |
+| **Filesystem Mount** | ✅ SECURE | No dangerous host mounts detected |
+
+> **Conclusion**: All critical isolation checks passed. Container cannot escape to host or access sensitive resources.
+
