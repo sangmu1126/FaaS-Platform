@@ -6,6 +6,6 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  // 인증 체크 우회 - 바로 접근 허용
+  // Authentication check bypassed - direct access allowed
   return <>{children}</>;
 }

@@ -85,7 +85,7 @@ export default function FunctionDetailPage() {
         const d = new Date(ts);
         if (range === '24h') {
           d.setMinutes(0, 0, 0); // Hour bucket
-        } else if (range === '7d') {
+        } else if (range === '7d' || range === '30d') {
           d.setHours(0, 0, 0, 0); // Day bucket
         } else {
           d.setSeconds(0, 0); // Minute bucket
@@ -103,6 +103,9 @@ export default function FunctionDetailPage() {
       } else if (selectedTimeRange === '7d') {
         bucketSizeMs = 24 * 60 * 60 * 1000; // 1d
         startTimeMs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+      } else if (selectedTimeRange === '30d') {
+        bucketSizeMs = 24 * 60 * 60 * 1000; // 1d
+        startTimeMs = now.getTime() - 30 * 24 * 60 * 60 * 1000;
       }
 
       // 2. Initialize all buckets with 0 using Timestamp Key
@@ -160,12 +163,12 @@ export default function FunctionDetailPage() {
         .map(([timestamp, data]) => {
           const date = new Date(timestamp);
           let label = '';
-          if (selectedTimeRange === '7d') {
-            label = date.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+          if (selectedTimeRange === '7d' || selectedTimeRange === '30d') {
+            label = date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
           } else if (selectedTimeRange === '24h') {
-            label = `${date.getHours()}시`;
+            label = `${date.getHours()}h`;
           } else {
-            label = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+            label = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
           }
 
           return {
@@ -234,7 +237,7 @@ export default function FunctionDetailPage() {
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4 mx-auto"></div>
-          <p className="text-gray-600 font-medium">함수 정보를 불러오는 중...</p>
+          <p className="text-gray-600 font-medium">Loading function details...</p>
         </div>
       </div>
     );
@@ -244,23 +247,23 @@ export default function FunctionDetailPage() {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50 flex-col gap-4">
         <i className="ri-error-warning-line text-6xl text-gray-400"></i>
-        <h2 className="text-xl font-bold text-gray-700">함수 정보를 찾을 수 없습니다</h2>
-        <p className="text-gray-500">삭제되었거나 존재하지 않는 함수입니다.</p>
+        <h2 className="text-xl font-bold text-gray-700">Function not found</h2>
+        <p className="text-gray-500">The function has been deleted or does not exist.</p>
         <button
           onClick={() => navigate('/dashboard')}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
         >
-          대시보드로 돌아가기
+          Return to Dashboard
         </button>
       </div>
     );
   }
 
   const tabs = [
-    { id: 'overview', label: '개요', icon: 'ri-dashboard-line' },
-    { id: 'metrics', label: '메트릭', icon: 'ri-line-chart-line' },
-    { id: 'logs', label: '로그', icon: 'ri-file-list-3-line' },
-    { id: 'settings', label: '설정', icon: 'ri-settings-3-line' }
+    { id: 'overview', label: 'Overview', icon: 'ri-dashboard-line' },
+    { id: 'metrics', label: 'Metrics', icon: 'ri-line-chart-line' },
+    { id: 'logs', label: 'Logs', icon: 'ri-file-list-3-line' },
+    { id: 'settings', label: 'Settings', icon: 'ri-settings-3-line' }
   ];
 
   const getLevelColor = (level: string) => {
@@ -345,8 +348,8 @@ export default function FunctionDetailPage() {
       // Trigger success alert
       useAlertStore.getState().addAlert({
         type: 'success',
-        title: '함수 실행 완료',
-        message: `${functionItem?.name || 'Function'} 실행 성공 (${executionTime}ms)`
+        title: 'Function Execution Complete',
+        message: `${functionItem?.name || 'Function'} executed successfully (${executionTime}ms)`
       });
 
     } catch (error: any) {
@@ -364,15 +367,15 @@ export default function FunctionDetailPage() {
       // Trigger error alert
       useAlertStore.getState().addAlert({
         type: 'error',
-        title: '함수 실행 실패',
-        message: error.message || '알 수 없는 오류가 발생했습니다'
+        title: 'Function Execution Failed',
+        message: error.message || 'An unknown error occurred'
       });
     }
 
     setIsTestRunning(false);
   };
 
-  // Auto-Tuner 분석 로직
+  // Auto-Tuner analysis logic
   const getAutoTunerAnalysis = () => {
     if (!testResult) return null;
 
@@ -402,69 +405,69 @@ export default function FunctionDetailPage() {
 
       diagnosis = {
         status: isWarning ? 'warning' : 'tip', // Use 'tip' for improvements
-        title: isWarning ? '메모리 부족 경고' : '비용 절감 팁 (Auto-Tuner)',
-        message: testResult.optimizationTip.replace("💡 Tip: ", "").replace("⚠️ Warning: ", ""),
-        recommendation: testResult.estimatedSavings || '메모리 설정 최적화 권장',
+        title: isWarning ? 'Memory Shortage Warning' : 'Cost Saving Tip (Auto-Tuner)',
+        message: testResult.message || '',
+        recommendation: testResult.estimatedSavings || 'Recommended to optimize memory settings',
         savings: realSavings,
         insight: testResult.optimizationTip
       };
       return diagnosis;
     }
 
-    // 진단 로직
-    if (memoryUsagePercent < 30 && cpuUsage > 60) {
-      diagnosis = {
-        status: 'warning',
-        title: '비효율 감지 (Inefficient)',
-        message: '메모리가 과하게 할당되었습니다.',
-        recommendation: `512MB → 128MB로 변경 시 월 $3.50 절약 예상`,
-        savings: 50,
-        insight: '💡 메모리 다이어트 가능! CPU 위주의 작업입니다. 메모리를 줄여 비용을 아끼세요.'
+    // Diagnosis logic
+    if (memoryUsagePercent < 25 && testResult.cpuUsage < 30) {
+      return {
+        status: 'tip',
+        title: 'Inefficiency Detected',
+        message: 'Memory is over-allocated.',
+        recommendation: `Changing 512MB → 128MB could save $3.50/month`,
+        savings: 75,
+        insight: '💡 Memory Diet Possible! This is a CPU-bound task. Reduce memory to save costs.'
       };
     } else if (cpuUsage < 20 && testResult.executionTime > 100) {
-      diagnosis = {
+      return {
         status: 'warning',
-        title: '주의 (Warning)',
-        message: 'I/O 병목이 감지되었습니다.',
-        recommendation: '외부 API 응답 최적화 권장',
+        title: 'Warning',
+        message: 'I/O Bottleneck detected.',
+        recommendation: 'Recommended to optimize external API response',
         savings: 0,
-        insight: '🐢 I/O 병목 감지. 외부 API 응답을 기다리느라 시간이 오래 걸리고 있습니다.'
+        insight: '🐢 I/O Bottleneck Detected. Time is being spent waiting for external API responses.'
       };
     } else if (hasNetworkActivity && cpuUsage > 60) {
-      diagnosis = {
+      return {
         status: 'optimal',
-        title: '최적 (Optimal)',
-        message: '리소스 설정이 적절합니다.',
-        recommendation: '현재 설정 유지',
+        title: 'Optimal',
+        message: 'Resource settings are appropriate.',
+        recommendation: 'Maintain current settings',
         savings: 0,
-        insight: '🚀 데이터 처리 중. 대용량 데이터를 내려받아 처리하는 작업으로 보입니다.'
+        insight: '🚀 Processing Data. This appears to be a task processing large amounts of data.'
       };
     } else if (cpuUsage < 10 && memoryUsagePercent < 10) {
-      diagnosis = {
+      return {
         status: 'critical',
-        title: '위험 (Critical)',
-        message: '리소스 사용량이 비정상적으로 낮습니다.',
-        recommendation: '코드 로직 확인 필요',
+        title: 'Critical',
+        message: 'Resource usage is abnormally low.',
+        recommendation: 'Code logic verification required',
         savings: 0,
-        insight: '👻 좀비 프로세스? 리소스 사용량이 거의 없습니다. 코드 로직을 확인해보세요.'
+        insight: '👻 Zombie Process? Resource usage is nearly zero. Check your code logic.'
       };
     } else if (memoryUsagePercent > 80) {
-      diagnosis = {
+      return {
         status: 'critical',
-        title: '위험 (Critical)',
-        message: '메모리 부족 위험이 있습니다.',
-        recommendation: '512MB → 1024MB로 증설 권장',
+        title: 'Critical',
+        message: 'Risk of memory shortage.',
+        recommendation: 'Recommended to upgrade 512MB → 1024MB',
         savings: 0,
-        insight: '⚠️ 메모리 부족! 성능 저하를 방지하려면 메모리를 늘리세요.'
+        insight: '⚠️ Memory Shortage! Increase memory to prevent performance degradation.'
       };
     } else {
-      diagnosis = {
+      return {
         status: 'optimal',
-        title: '최적 (Optimal)',
-        message: '리소스 설정이 완벽합니다.',
-        recommendation: '현재 설정 유지',
+        title: 'Optimal',
+        message: 'Resource settings are perfect.',
+        recommendation: 'Maintain current settings',
         savings: 0,
-        insight: '✨ 완벽한 균형! 현재 리소스 설정이 최적화되어 있습니다.'
+        insight: '✨ Perfect Balance! Current resource settings are optimized.'
       };
     }
 
@@ -505,7 +508,7 @@ export default function FunctionDetailPage() {
       loadData();
     } catch (error) {
       console.error("Apply Failed", error);
-      alert("설정 적용에 실패했습니다.");
+      alert("Failed to apply settings.");
     } finally {
       setPendingRecMem(null);
     }
@@ -540,7 +543,7 @@ export default function FunctionDetailPage() {
                         <button
                           onClick={() => navigator.clipboard.writeText(id || '')}
                           className="text-gray-400 hover:text-blue-500 transition-colors"
-                          title="ID 복사"
+                          title="Copy ID"
                         >
                           <i className="ri-file-copy-line text-sm"></i>
                         </button>
@@ -553,7 +556,7 @@ export default function FunctionDetailPage() {
                       className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-2"
                     >
                       <i className="ri-play-circle-line"></i>
-                      테스트 실행
+                      Test Run
                     </button>
                     <button
                       onClick={() => navigate('/deploy', {
@@ -566,7 +569,7 @@ export default function FunctionDetailPage() {
                       className="px-4 py-2 bg-white border border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer flex items-center gap-2"
                     >
                       <i className="ri-upload-cloud-line"></i>
-                      재배포
+                      Redeploy
                     </button>
                   </div>
                 </div>
@@ -606,7 +609,7 @@ export default function FunctionDetailPage() {
                             : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
                             }`}
                         >
-                          {range === '24h' ? '오늘' : range === '7d' ? '일주일' : '1시간'}
+                          {range === '24h' ? 'Today' : range === '7d' ? 'Week' : '1 Hour'}
                         </button>
                       ))}
                     </div>
@@ -615,11 +618,11 @@ export default function FunctionDetailPage() {
                   {/* Quick Stats */}
                   <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
-                      <div className="text-sm text-gray-600 mb-2">총 실행 횟수</div>
+                      <div className="text-sm text-gray-600 mb-2">Total Invocations</div>
                       <div className="text-3xl font-bold text-gray-900">{metrics.invocations.toLocaleString()}</div>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
-                      <div className="text-sm text-gray-600 mb-2">평균 응답 시간</div>
+                      <div className="text-sm text-gray-600 mb-2">Avg Response Time</div>
                       <div className="text-3xl font-bold text-gray-900">{metrics.avgDuration}ms</div>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
@@ -627,11 +630,11 @@ export default function FunctionDetailPage() {
                       <div className="text-3xl font-bold text-blue-600">{metrics.coldStarts}ms</div>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
-                      <div className="text-sm text-gray-600 mb-2">에러 발생</div>
+                      <div className="text-sm text-gray-600 mb-2">Error Count</div>
                       <div className="text-3xl font-bold text-red-600">{metrics.errors}</div>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
-                      <div className="text-sm text-gray-600 mb-2">성공률</div>
+                      <div className="text-sm text-gray-600 mb-2">Success Rate</div>
                       <div className="text-3xl font-bold text-green-600">{metrics.successRate}%</div>
                     </div>
                   </div>
@@ -639,33 +642,33 @@ export default function FunctionDetailPage() {
                   {/* Function Info */}
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
-                      <h3 className="text-lg font-bold text-gray-900 mb-4">함수 정보</h3>
+                      <h3 className="text-lg font-bold text-gray-900 mb-4">Function Info</h3>
                       <div className="space-y-3">
                         <div className="flex justify-between py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">언어</span>
+                          <span className="text-sm text-gray-600">Language</span>
                           <span className="text-sm font-medium text-gray-900">{functionData.language}</span>
                         </div>
                         <div className="flex justify-between py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">런타임</span>
+                          <span className="text-sm text-gray-600">Runtime</span>
                           <span className="text-sm font-medium text-gray-900">{functionData.runtime}</span>
                         </div>
                         <div className="flex justify-between py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">메모리</span>
+                          <span className="text-sm text-gray-600">Memory</span>
                           <span className="text-sm font-medium text-gray-900">{functionData.memory} MB</span>
                         </div>
                         <div className="flex justify-between py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">타임아웃</span>
-                          <span className="text-sm font-medium text-gray-900">{functionData.timeout}초</span>
+                          <span className="text-sm text-gray-600">Timeout</span>
+                          <span className="text-sm font-medium text-gray-900">{functionData.timeout}s</span>
                         </div>
                         <div className="flex justify-between py-2">
-                          <span className="text-sm text-gray-600">마지막 배포</span>
+                          <span className="text-sm text-gray-600">Last Deployed</span>
                           <span className="text-sm font-medium text-gray-900">{functionData.lastDeployed}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
-                      <h3 className="text-lg font-bold text-gray-900 mb-4">엔드포인트</h3>
+                      <h3 className="text-lg font-bold text-gray-900 mb-4">Endpoint</h3>
                       <div className="bg-gradient-to-br from-blue-50 to-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
                         <div className="flex items-center justify-between">
                           <code className="text-sm text-gray-700 break-all">{functionData.endpoint}</code>
@@ -675,7 +678,7 @@ export default function FunctionDetailPage() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <div className="text-sm text-gray-600">요청 예시:</div>
+                        <div className="text-sm text-gray-600">Request example:</div>
                         <div className="bg-gray-900 rounded-xl p-4 font-mono text-xs text-gray-100">
                           <div className="text-blue-400">curl</div>
                           <div className="text-gray-300 ml-2">-X POST \</div>
@@ -693,30 +696,30 @@ export default function FunctionDetailPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-3">
                           <i className="ri-magic-line text-2xl"></i>
-                          <h3 className="text-xl font-bold">Auto-Tuner 추천</h3>
+                          <h3 className="text-xl font-bold">Auto-Tuner Recommendation</h3>
                         </div>
                         <p className="text-white/90 mb-4">
-                          실행 데이터를 분석한 결과, 메모리를 256MB로 조정하면 비용을 <strong>약 50%</strong> 절감할 수 있습니다.
+                          Analysis of execution data shows that adjusting memory to 256MB can reduce costs by <strong>approximately 50%</strong>.
                         </p>
                         <div className="flex items-center gap-4">
                           <button
                             onClick={() => setShowOptimizationToast(true)}
                             className="px-6 py-2.5 bg-white text-blue-600 font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer"
                           >
-                            추천 적용하기
+                            Apply Recommendation
                           </button>
                           <button
                             onClick={() => setShowTestModal(true)}
                             className="px-6 py-2.5 bg-white/10 backdrop-blur-md text-white font-semibold rounded-xl hover:bg-white/30 transition-all whitespace-nowrap cursor-pointer border border-white/30"
                           >
-                            자세히 보기
+                            View Details
                           </button>
                         </div>
                       </div>
                       <div className="ml-6 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/30">
                         <div className="text-center">
                           <div className="text-3xl font-bold mb-1">50%</div>
-                          <div className="text-sm text-white/90">예상 절감</div>
+                          <div className="text-sm text-white/90">Est. Savings</div>
                         </div>
                       </div>
                     </div>
@@ -725,16 +728,16 @@ export default function FunctionDetailPage() {
                   {/* Recent Invocations */}
                   <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm">
                     <div className="px-6 py-4 border-b border-gray-200">
-                      <h3 className="text-lg font-bold text-gray-900">최근 실행 내역</h3>
+                      <h3 className="text-lg font-bold text-gray-900">Recent Invocations</h3>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="bg-gray-50/50 border-b border-gray-200">
                           <tr>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">시간</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">응답 시간</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">메모리 사용</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">상태</th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Time</th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Response Time</th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Memory Used</th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -752,14 +755,14 @@ export default function FunctionDetailPage() {
                                           'bg-red-50 text-red-600 border border-red-200'
                                   }`}>
                                   {
-                                    inv.status === 'SUCCESS' ? '성공' :
-                                      inv.status === 'UPLOAD' ? '업로드' :
-                                        inv.status === 'UPDATE' ? '업데이트' :
-                                          inv.status === 'PENDING' ? '대기' :
-                                            inv.status === 'DELETE' ? '삭제' :
-                                              inv.status === 'TIMEOUT' ? '시간초과' :
-                                                inv.status === 'ERROR' ? '실패' :
-                                                  '알수없음'
+                                    inv.status === 'SUCCESS' ? 'Success' :
+                                      inv.status === 'UPLOAD' ? 'Upload' :
+                                        inv.status === 'UPDATE' ? 'Update' :
+                                          inv.status === 'PENDING' ? 'Pending' :
+                                            inv.status === 'DELETE' ? 'Delete' :
+                                              inv.status === 'TIMEOUT' ? 'Timeout' :
+                                                inv.status === 'ERROR' ? 'Failed' :
+                                                  'Unknown'
                                   }
                                 </span>
                               </td>
@@ -786,7 +789,7 @@ export default function FunctionDetailPage() {
                             : 'bg-white border border-purple-200 text-gray-700 hover:bg-gray-50'
                             }`}
                         >
-                          1시간
+                          1 Hour
                         </button>
                         <button
                           onClick={() => setSelectedTimeRange('24h')}
@@ -795,7 +798,7 @@ export default function FunctionDetailPage() {
                             : 'bg-white border border-purple-200 text-gray-700 hover:bg-purple-50'
                             }`}
                         >
-                          24시간
+                          24 Hours
                         </button>
                         <button
                           onClick={() => setSelectedTimeRange('7d')}
@@ -804,7 +807,7 @@ export default function FunctionDetailPage() {
                             : 'bg-white border border-purple-200 text-gray-700 hover:bg-purple-50'
                             }`}
                         >
-                          7일
+                          7 Days
                         </button>
                         <button
                           onClick={() => setSelectedTimeRange('30d')}
@@ -813,7 +816,7 @@ export default function FunctionDetailPage() {
                             : 'bg-white border border-purple-200 text-gray-700 hover:bg-purple-50'
                             }`}
                         >
-                          30일
+                          30 Days
                         </button>
                       </div>
                       <button className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-purple-200 hover:bg-purple-50 transition-all cursor-pointer">
@@ -827,7 +830,7 @@ export default function FunctionDetailPage() {
                     {/* Invocations Chart */}
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-gray-900">실행 횟수</h3>
+                        <h3 className="text-lg font-bold text-gray-900">Invocation Count</h3>
                         <i className="ri-bar-chart-line text-2xl text-blue-600"></i>
                       </div>
                       <div className="h-64">
@@ -843,16 +846,16 @@ export default function FunctionDetailPage() {
                                   borderRadius: '12px',
                                   border: '1px solid #E5E7EB'
                                 }}
-                                formatter={(value: number) => [`${value}회`, '실행 횟수']}
+                                formatter={(value: number) => [`${value}`, 'Invocations']}
                               />
-                              <Bar dataKey="invocations" fill="#3B82F6" radius={[4, 4, 0, 0]} name="실행 횟수" />
+                              <Bar dataKey="invocations" fill="#3B82F6" radius={[4, 4, 0, 0]} name="Invocations" />
                             </BarChart>
                           </ResponsiveContainer>
                         ) : (
                           <div className="h-full flex items-center justify-center text-gray-400 text-sm bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
                             <div className="text-center">
                               <i className="ri-bar-chart-box-line text-3xl mb-2 block opacity-50"></i>
-                              실행 데이터가 없습니다
+                              No execution data
                             </div>
                           </div>
                         )}
@@ -862,7 +865,7 @@ export default function FunctionDetailPage() {
                     {/* Duration Chart */}
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-gray-900">응답 시간</h3>
+                        <h3 className="text-lg font-bold text-gray-900">Response Time</h3>
                         <i className="ri-time-line text-2xl text-green-600"></i>
                       </div>
                       <div className="h-64">
@@ -878,7 +881,7 @@ export default function FunctionDetailPage() {
                                   borderRadius: '12px',
                                   border: '1px solid #E5E7EB'
                                 }}
-                                formatter={(value: number) => [`${value}ms`, '평균 응답 시간']}
+                                formatter={(value: number) => [`${value}ms`, 'Avg Response Time']}
                               />
                               <Line
                                 type="monotone"
@@ -887,7 +890,7 @@ export default function FunctionDetailPage() {
                                 strokeWidth={2}
                                 dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
                                 activeDot={{ r: 6, fill: '#059669' }}
-                                name="평균 응답 시간 (ms)"
+                                name="Avg Response Time (ms)"
                               />
                             </LineChart>
                           </ResponsiveContainer>
@@ -895,7 +898,7 @@ export default function FunctionDetailPage() {
                           <div className="h-full flex items-center justify-center text-gray-400 text-sm bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
                             <div className="text-center">
                               <i className="ri-timer-flash-line text-3xl mb-2 block opacity-50"></i>
-                              실행 데이터가 없습니다
+                              No execution data
                             </div>
                           </div>
                         )}
@@ -911,17 +914,17 @@ export default function FunctionDetailPage() {
                           <i className="ri-check-line text-2xl text-green-600"></i>
                         </div>
                         <div>
-                          <div className="text-sm text-gray-600">성공률</div>
+                          <div className="text-sm text-gray-600">Success Rate</div>
                           <div className="text-2xl font-bold text-gray-900">{metrics?.successRate || '100.00'}%</div>
                         </div>
                       </div>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">성공</span>
+                          <span className="text-gray-600">Success</span>
                           <span className="font-medium text-green-600">{metrics?.successCount?.toLocaleString() || 0}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">실패</span>
+                          <span className="text-gray-600">Failed</span>
                           <span className="font-medium text-red-600">{metrics?.errorCount?.toLocaleString() || 0}</span>
                         </div>
                       </div>
@@ -933,17 +936,17 @@ export default function FunctionDetailPage() {
                           <i className="ri-database-2-line text-2xl text-orange-600"></i>
                         </div>
                         <div>
-                          <div className="text-sm text-gray-600">평균 메모리</div>
+                          <div className="text-sm text-gray-600">Avg Memory</div>
                           <div className="text-2xl font-bold text-gray-900">{metrics?.memory || 128} MB</div>
                         </div>
                       </div>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">최대</span>
+                          <span className="text-gray-600">Max</span>
                           <span className="font-medium text-gray-900">{metrics?.memory || 128} MB</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">최소</span>
+                          <span className="text-gray-600">Min</span>
                           <span className="font-medium text-gray-900">{metrics?.memory || 128} MB</span>
                         </div>
                       </div>
@@ -965,11 +968,11 @@ export default function FunctionDetailPage() {
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Warm Pool</span>
                           <span className={`font-medium ${systemStatus?.pools ? 'text-green-600' : 'text-gray-400'}`}>
-                            {systemStatus?.pools ? '활성' : '확인 중...'}
+                            {systemStatus?.pools ? 'Active' : 'Checking...'}
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">대기 인스턴스</span>
+                          <span className="text-gray-600">Standby Instances</span>
                           <span className="font-medium text-gray-900">
                             {(() => {
                               if (!systemStatus?.pools) return '-';
@@ -978,7 +981,7 @@ export default function FunctionDetailPage() {
                               const poolCount = systemStatus.pools[runtimeKey] ||
                                 systemStatus.pools[runtime] ||
                                 Object.values(systemStatus.pools).reduce((a: number, b: any) => a + b, 0);
-                              return `${poolCount}개`;
+                              return `${poolCount}`;
                             })()}
                           </span>
                         </div>
@@ -988,9 +991,9 @@ export default function FunctionDetailPage() {
 
                   {/* Cost Analysis */}
                   <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">비용 분석</h3>
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">Cost Analysis</h3>
                     {(() => {
-                      // AWS Lambda 가격 기준 계산
+                      // AWS Lambda pricing calculation
                       const costPerRequest = 0.0000002; // $0.20 per 1M requests
                       const costPerGbSecond = 0.0000166667; // per GB-second
 
@@ -999,45 +1002,45 @@ export default function FunctionDetailPage() {
                       const memoryGb = memoryMb / 1024;
                       const avgDurationSec = (metrics?.avgDuration || 0) / 1000;
 
-                      // 이번 달 비용
+                      // Current month cost
                       const requestCost = invocations * costPerRequest;
                       const computeCost = invocations * avgDurationSec * memoryGb * costPerGbSecond;
                       const currentCost = requestCost + computeCost;
 
-                      // 최적화 전 비용 시뮬레이션 (메모리 512MB 가정)
+                      // Pre-optimization cost simulation (assuming 512MB memory)
                       const oldMemoryGb = 512 / 1024;
                       const oldComputeCost = invocations * avgDurationSec * oldMemoryGb * costPerGbSecond;
                       const oldCost = requestCost + oldComputeCost;
 
-                      // 절감액/절감률
+                      // Savings amount/rate
                       const savings = oldCost - currentCost;
                       const savingsPercent = oldCost > 0 ? ((savings / oldCost) * 100) : 0;
 
                       return (
                         <div className="grid md:grid-cols-4 gap-4">
                           <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-gray-50 rounded-xl border border-gray-200">
-                            <div className="text-sm text-gray-600 mb-1">이번 달 (추정)</div>
+                            <div className="text-sm text-gray-600 mb-1">This Month (Est.)</div>
                             <div className="text-2xl font-bold text-gray-900">
                               ${currentCost.toFixed(6)}
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
-                              요청: ${requestCost.toFixed(6)} + 컴퓨팅: ${computeCost.toFixed(6)}
+                              Requests: ${requestCost.toFixed(6)} + Compute: ${computeCost.toFixed(6)}
                             </div>
                           </div>
                           <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-gray-200">
-                            <div className="text-sm text-gray-600 mb-1">최적화 전 비용</div>
+                            <div className="text-sm text-gray-600 mb-1">Pre-Optimization Cost</div>
                             <div className="text-2xl font-bold text-gray-500">${oldCost.toFixed(6)}</div>
-                            <div className="text-xs text-gray-500 mt-1">512MB 기준</div>
+                            <div className="text-xs text-gray-500 mt-1">Based on 512MB</div>
                           </div>
                           <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
-                            <div className="text-sm text-gray-600 mb-1">절감액</div>
+                            <div className="text-sm text-gray-600 mb-1">Savings</div>
                             <div className="text-2xl font-bold text-green-600">${savings.toFixed(6)}</div>
-                            <div className="text-xs text-green-600 mt-1">메모리 최적화 효과</div>
+                            <div className="text-xs text-green-600 mt-1">Memory optimization effect</div>
                           </div>
                           <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
-                            <div className="text-sm text-gray-600 mb-1">절감률</div>
+                            <div className="text-sm text-gray-600 mb-1">Savings Rate</div>
                             <div className="text-2xl font-bold text-green-600">{savingsPercent.toFixed(1)}%</div>
-                            <div className="text-xs text-green-600 mt-1">{memoryMb}MB로 최적화</div>
+                            <div className="text-xs text-green-600 mt-1">Optimized to {memoryMb}MB</div>
                           </div>
                         </div>
                       );
@@ -1057,9 +1060,9 @@ export default function FunctionDetailPage() {
                           <i className="ri-file-list-3-line text-2xl text-white"></i>
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-blue-900 mb-1">최근 실행 로그</h3>
+                          <h3 className="text-lg font-bold text-blue-900 mb-1">Recent Execution Logs</h3>
                           <p className="text-sm text-blue-800">
-                            최근 20개의 로그를 표시합니다. 전체 로그 및 고급 필터링은 Logs Explorer를 이용하세요.
+                            Showing the latest 20 logs. For full logs and advanced filtering, use the Logs Explorer.
                           </p>
                         </div>
                       </div>
@@ -1068,7 +1071,7 @@ export default function FunctionDetailPage() {
                         className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-2"
                       >
                         <i className="ri-external-link-line text-lg"></i>
-                        Logs Explorer에서 전체 보기
+                        View All in Logs Explorer
                       </Link>
                     </div>
                   </div>
@@ -1078,14 +1081,14 @@ export default function FunctionDetailPage() {
                     <div className="flex items-center gap-4">
                       <div className="flex-1">
                         <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          로그 레벨
+                          Log Level
                         </label>
                         <select
                           value={logFilters.level}
                           onChange={(e) => setLogFilters({ ...logFilters, level: e.target.value })}
                           className="w-full px-4 py-2.5 bg-white border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all text-sm"
                         >
-                          <option value="all">전체</option>
+                          <option value="all">All</option>
                           <option value="info">Info</option>
                           <option value="warning">Warning</option>
                           <option value="error">Error</option>
@@ -1094,14 +1097,14 @@ export default function FunctionDetailPage() {
 
                       <div className="flex-1">
                         <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          검색
+                          Search
                         </label>
                         <div className="relative">
                           <input
                             type="text"
                             value={logFilters.search}
                             onChange={(e) => setLogFilters({ ...logFilters, search: e.target.value })}
-                            placeholder="로그 메시지 검색..."
+                            placeholder="Search log messages..."
                             className="w-full px-4 py-2.5 pl-10 bg-white border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all text-sm"
                           />
                           <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
@@ -1114,7 +1117,7 @@ export default function FunctionDetailPage() {
                           className="px-4 py-2.5 bg-white border border-purple-200 text-gray-700 font-medium rounded-xl hover:bg-purple-50 transition-all whitespace-nowrap cursor-pointer text-sm"
                         >
                           <i className="ri-refresh-line mr-1"></i>
-                          초기화
+                          Reset
                         </button>
                       </div>
                     </div>
@@ -1123,7 +1126,7 @@ export default function FunctionDetailPage() {
                   {/* Recent Logs List */}
                   <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-gray-200">
-                      <h3 className="text-lg font-bold text-gray-900">실행 로그</h3>
+                      <h3 className="text-lg font-bold text-gray-900">Execution Logs</h3>
                     </div>
 
                     <div className="divide-y divide-gray-200">
@@ -1172,13 +1175,13 @@ export default function FunctionDetailPage() {
                     <div className="px-6 py-4 bg-gradient-to-r from-purple-50 to-pink-50 border-t border-gray-200">
                       <div className="flex items-center justify-between">
                         <p className="text-sm text-gray-600">
-                          최근 20개의 로그만 표시됩니다
+                          Only showing the latest 20 logs
                         </p>
                         <Link
                           to={`/logs?functionId=${id}`}
                           className="text-sm font-semibold text-blue-600 hover:text-purple-700 transition-colors cursor-pointer flex items-center gap-1"
                         >
-                          전체 로그 보기
+                          View All Logs
                           <i className="ri-arrow-right-line"></i>
                         </Link>
                       </div>
@@ -1192,10 +1195,10 @@ export default function FunctionDetailPage() {
                 <div className="space-y-6">
                   {/* General Settings */}
                   <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">일반 설정</h3>
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">General Settings</h3>
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">함수명</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Function Name</label>
                         <input
                           type="text"
                           defaultValue={functionData.name}
@@ -1204,10 +1207,10 @@ export default function FunctionDetailPage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">설명</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
                         <textarea
                           rows={3}
-                          placeholder="함수에 대한 설명을 입력하세요..."
+                          placeholder="Enter a description for this function..."
                           className="w-full px-4 py-2 bg-white border border-purple-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all resize-none"
                         ></textarea>
                       </div>
@@ -1216,10 +1219,10 @@ export default function FunctionDetailPage() {
 
                   {/* Runtime Settings */}
                   <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">런타임 설정</h3>
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">Runtime Settings</h3>
                     <div className="grid md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">메모리 (MB)</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Memory (MB)</label>
                         <select
                           defaultValue={functionData.memory}
                           className="w-full px-4 py-2 bg-white border border-purple-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all"
@@ -1233,16 +1236,16 @@ export default function FunctionDetailPage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">타임아웃 (초)</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Timeout (Seconds)</label>
                         <select
                           defaultValue={functionData.timeout}
                           className="w-full px-4 py-2 bg-white border border-purple-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all"
                         >
-                          <option value="10">10초</option>
-                          <option value="30">30초</option>
-                          <option value="60">60초</option>
-                          <option value="120">120초</option>
-                          <option value="300">300초</option>
+                          <option value="10">10s</option>
+                          <option value="30">30s</option>
+                          <option value="60">60s</option>
+                          <option value="120">120s</option>
+                          <option value="300">300s</option>
                         </select>
                       </div>
                     </div>
@@ -1251,10 +1254,10 @@ export default function FunctionDetailPage() {
                   {/* Environment Variables */}
                   <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-bold text-gray-900">환경 변수</h3>
+                      <h3 className="text-lg font-bold text-gray-900">Environment Variables</h3>
                       <button className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer text-sm flex items-center gap-2">
                         <i className="ri-add-line"></i>
-                        추가
+                        Add
                       </button>
                     </div>
                     <div className="space-y-3">
@@ -1278,12 +1281,12 @@ export default function FunctionDetailPage() {
 
                   {/* Warm Pool Settings */}
                   <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-gray-200 p-6 shadow-sm">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">Warm Pool 설정</h3>
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">Warm Pool Settings</h3>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-semibold text-gray-900 mb-1">Warm Pool 활성화</div>
-                          <div className="text-sm text-gray-600">Cold Start를 0ms로 유지합니다</div>
+                          <div className="font-semibold text-gray-900 mb-1">Enable Warm Pool</div>
+                          <div className="text-sm text-gray-600">Keeps Cold Start at 0ms</div>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                           <input type="checkbox" defaultChecked className="sr-only peer" />
@@ -1292,16 +1295,16 @@ export default function FunctionDetailPage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">대기 인스턴스 수</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Standby Instance Count</label>
                         <select
                           defaultValue="3"
                           className="w-full px-4 py-2 bg-white border border-purple-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all"
                         >
-                          <option value="1">1개</option>
-                          <option value="2">2개</option>
-                          <option value="3">3개</option>
-                          <option value="5">5개</option>
-                          <option value="10">10개</option>
+                          <option value="1">1</option>
+                          <option value="2">2</option>
+                          <option value="3">3</option>
+                          <option value="5">5</option>
+                          <option value="10">10</option>
                         </select>
                       </div>
                     </div>
@@ -1309,15 +1312,15 @@ export default function FunctionDetailPage() {
 
                   {/* Danger Zone */}
                   <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-                    <h3 className="text-lg font-bold text-red-900 mb-4">위험 구역</h3>
+                    <h3 className="text-lg font-bold text-red-900 mb-4">Danger Zone</h3>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-semibold text-red-900 mb-1">함수 삭제</div>
-                          <div className="text-sm text-red-700">이 작업은 되돌릴 수 없습니다</div>
+                          <div className="font-semibold text-red-900 mb-1">Delete Function</div>
+                          <div className="text-sm text-red-700">This action cannot be undone</div>
                         </div>
                         <button className="px-4 py-2 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition-all whitespace-nowrap cursor-pointer">
-                          삭제하기
+                          Delete
                         </button>
                       </div>
                     </div>
@@ -1326,10 +1329,10 @@ export default function FunctionDetailPage() {
                   {/* Save Button */}
                   <div className="flex items-center justify-end gap-3">
                     <button className="px-6 py-2.5 bg-white border border-purple-200 text-gray-700 font-semibold rounded-xl hover:bg-purple-50 transition-all whitespace-nowrap cursor-pointer">
-                      취소
+                      Cancel
                     </button>
                     <button className="px-6 py-2.5 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer">
-                      변경사항 저장
+                      Save Changes
                     </button>
                   </div>
                 </div>
@@ -1338,16 +1341,16 @@ export default function FunctionDetailPage() {
           </main>
         </div>
 
-        {/* Test Run Modal - 버전 37 스타일 */}
+        {/* Test Run Modal */}
         {showTestModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             {/* Apply Optimization Confirm Modal - Inside Test Modal */}
             <ConfirmModal
               isOpen={showApplyModal}
-              title="메모리 최적화 적용"
-              message={`메모리를 ${pendingRecMem}MB로 변경하시겠습니까? 다음 실행부터 적용됩니다.`}
-              confirmText="적용하기"
-              cancelText="취소"
+              title="Apply Memory Optimization"
+              message={`Change memory to ${pendingRecMem}MB? This will apply from the next execution.`}
+              confirmText="Apply"
+              cancelText="Cancel"
               variant="success"
               onConfirm={confirmApplyRecommendation}
               onCancel={() => { setShowApplyModal(false); setPendingRecMem(null); }}
@@ -1361,7 +1364,7 @@ export default function FunctionDetailPage() {
                     <i className="ri-flask-line text-2xl text-white"></i>
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-white">함수 테스트</h3>
+                    <h3 className="text-xl font-bold text-white">Function Test</h3>
                     <p className="text-sm text-white/80">{functionData.name}</p>
                   </div>
                 </div>
@@ -1388,7 +1391,7 @@ export default function FunctionDetailPage() {
                       }`}
                   >
                     <i className="ri-code-line mr-2"></i>
-                    입력
+                    Input
                   </button>
                   <button
                     onClick={() => setActiveTestTab('result')}
@@ -1398,7 +1401,7 @@ export default function FunctionDetailPage() {
                       }`}
                   >
                     <i className="ri-terminal-line mr-2"></i>
-                    결과
+                    Result
                   </button>
                   <button
                     onClick={() => setActiveTestTab('advanced')}
@@ -1408,7 +1411,7 @@ export default function FunctionDetailPage() {
                       }`}
                   >
                     <i className="ri-bar-chart-line mr-2"></i>
-                    상세 분석 (Advanced)
+                    Advanced Analysis
                   </button>
                 </div>
               </div>
@@ -1420,12 +1423,12 @@ export default function FunctionDetailPage() {
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <label className="block text-sm font-semibold text-gray-700">
-                        테스트 입력 데이터 (JSON)
+                        Test Input Data (JSON)
                       </label>
                       <div className="flex items-center gap-3">
                         <span className={`text-xs font-medium ${isAsyncMode ? 'text-purple-600' : 'text-gray-500'}`}>
                           <i className="ri-timer-flash-line mr-1"></i>
-                          비동기 실행 (Async)
+                          Async Execution
                         </span>
                         <button
                           onClick={() => setIsAsyncMode(!isAsyncMode)}
@@ -1449,9 +1452,9 @@ export default function FunctionDetailPage() {
                       <div className="flex items-start gap-3">
                         <i className="ri-information-line text-blue-600 text-lg flex-shrink-0 mt-0.5"></i>
                         <div>
-                          <h4 className="text-sm font-semibold text-blue-900 mb-1">입력 형식 안내</h4>
+                          <h4 className="text-sm font-semibold text-blue-900 mb-1">Input Format Guide</h4>
                           <p className="text-sm text-blue-800">
-                            JSON 형식으로 테스트 데이터를 입력하세요. 함수의 event 매개변수로 전달됩니다.
+                            Enter test data in JSON format. It will be passed to the function's event parameter.
                           </p>
                         </div>
                       </div>
@@ -1465,7 +1468,7 @@ export default function FunctionDetailPage() {
                     {isTestRunning ? (
                       <div className="flex flex-col items-center justify-center py-12">
                         <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-                        <p className="text-gray-600 font-medium">함수 실행 중...</p>
+                        <p className="text-gray-600 font-medium">Executing function...</p>
                       </div>
                     ) : testResult ? (
                       <div className="space-y-4">
@@ -1482,7 +1485,7 @@ export default function FunctionDetailPage() {
                             </div>
                             <div>
                               <div className="font-bold text-gray-900">
-                                {testResult.success ? '✅ 실행 성공' : '❌ 실행 실패'}
+                                {testResult.success ? '✅ Execution Successful' : '❌ Execution Failed'}
                               </div>
                               <div className="text-sm text-gray-600">
                                 Status Code: {testResult.statusCode}
@@ -1494,11 +1497,11 @@ export default function FunctionDetailPage() {
                         {/* Metrics */}
                         <div className="grid grid-cols-2 gap-4">
                           <div className="bg-gradient-to-br from-blue-50 to-gray-50 rounded-xl p-4 border border-gray-200">
-                            <div className="text-sm text-gray-600 mb-1">응답 시간</div>
+                            <div className="text-sm text-gray-600 mb-1">Response Time</div>
                             <div className="text-2xl font-bold text-blue-600">{testResult.responseTime}ms</div>
                           </div>
                           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
-                            <div className="text-sm text-gray-600 mb-1">메모리 사용</div>
+                            <div className="text-sm text-gray-600 mb-1">Memory Used</div>
                             <div className="text-2xl font-bold text-blue-600">{testResult.memoryUsed}MB</div>
                           </div>
                         </div>
@@ -1507,7 +1510,7 @@ export default function FunctionDetailPage() {
                         <div>
                           <div className="flex items-center justify-between mb-2">
                             <label className="block text-sm font-semibold text-gray-700">
-                              출력 결과
+                              Output Result
                             </label>
                             <button
                               onClick={() => {
@@ -1516,7 +1519,7 @@ export default function FunctionDetailPage() {
                               className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-1"
                             >
                               <i className="ri-file-copy-line"></i>
-                              복사
+                              Copy
                             </button>
                           </div>
                           <div className="bg-gray-900 rounded-xl p-4 font-mono text-sm text-gray-100 overflow-x-auto max-h-64">
@@ -1527,7 +1530,7 @@ export default function FunctionDetailPage() {
                     ) : (
                       <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                         <i className="ri-play-circle-line text-6xl mb-4"></i>
-                        <p>테스트를 실행하려면 아래 버튼을 클릭하세요</p>
+                        <p>Click the button below to run a test</p>
                       </div>
                     )}
                   </div>
@@ -1549,12 +1552,12 @@ export default function FunctionDetailPage() {
                           }`}>
                           <div className="flex items-center gap-3 mb-2">
                             <i className={`${analysis.status === 'tip' ? 'ri-lightbulb-flash-fill' : 'ri-fire-fill'} text-3xl`}></i>
-                            <h3 className="text-2xl font-bold">Auto-Tuner 진단</h3>
+                            <h3 className="text-2xl font-bold">Auto-Tuner Diagnosis</h3>
                           </div>
                           <div className="text-xl font-bold mb-2">{analysis.title}</div>
                           <p className="text-white/90 mb-3">{analysis.message}</p>
                           <div className="bg-white/10 backdrop-blur-md rounded-lg p-3 border border-white/30">
-                            <div className="text-sm font-semibold mb-1">추천 사항</div>
+                            <div className="text-sm font-semibold mb-1">Recommendation</div>
                             <div className="text-white/90">{analysis.recommendation}</div>
                           </div>
                         </div>
@@ -1564,7 +1567,7 @@ export default function FunctionDetailPage() {
                           <div className="flex items-start gap-3">
                             <i className="ri-lightbulb-line text-blue-600 text-2xl flex-shrink-0 mt-0.5"></i>
                             <div>
-                              <h4 className="text-lg font-bold text-blue-900 mb-2">지능형 인사이트</h4>
+                              <h4 className="text-lg font-bold text-blue-900 mb-2">Smart Insights</h4>
                               <p className="text-blue-800 text-lg">{analysis.insight}</p>
                             </div>
                           </div>
@@ -1579,21 +1582,21 @@ export default function FunctionDetailPage() {
                             <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl p-5">
                               <div className="flex items-center justify-between">
                                 <div className="flex-1">
-                                  <h4 className="text-lg font-bold text-green-900 mb-2">💰 비용 절감 기회</h4>
+                                  <h4 className="text-lg font-bold text-green-900 mb-2">💰 Cost Saving Opportunity</h4>
                                   <p className="text-green-800 mb-3">
-                                    Auto-Tuner가 분석한 최적값을 적용하면 <strong>월 ${(analysis.savings * 0.07).toFixed(2)}</strong>를 절약할 수 있습니다.
+                                    By applying Auto-Tuner's optimized values, you can save <strong>${(analysis.savings * 0.07).toFixed(2)}</strong> monthly.
                                   </p>
                                   <button
                                     onClick={handleApplyRecommendation}
                                     className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-2"
                                   >
                                     <i className="ri-magic-line text-xl"></i>
-                                    최적값 ({recMem}MB) 자동 적용
+                                    Apply Optimal Value ({recMem}MB)
                                   </button>
                                 </div>
                                 <div className="ml-6 text-center">
                                   <div className="text-4xl font-black text-green-600 mb-1">{analysis.savings}%</div>
-                                  <div className="text-sm text-green-700 font-semibold">예상 절감</div>
+                                  <div className="text-sm text-green-700 font-semibold">Est. Savings</div>
                                 </div>
                               </div>
                             </div>
@@ -1604,9 +1607,9 @@ export default function FunctionDetailPage() {
                                   <i className="ri-checkbox-circle-fill text-3xl text-white"></i>
                                 </div>
                                 <div className="flex-1">
-                                  <h4 className="text-lg font-bold text-emerald-900 mb-1">✨ 최적값 적용 완료</h4>
+                                  <h4 className="text-lg font-bold text-emerald-900 mb-1">✨ Optimal Value Applied</h4>
                                   <p className="text-emerald-700">
-                                    현재 메모리 설정({testResult.memoryAllocated}MB)이 Auto-Tuner 권장 수준입니다. 추가 최적화가 필요하지 않습니다.
+                                    Current memory setting ({testResult.memoryAllocated}MB) is at Auto-Tuner recommended level. No further optimization needed.
                                   </p>
                                 </div>
                               </div>
@@ -1618,7 +1621,7 @@ export default function FunctionDetailPage() {
                         <div>
                           <h4 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                             <i className="ri-dna-line text-blue-600"></i>
-                            리소스 DNA 분석
+                            Resource DNA Analysis
                           </h4>
                           <div className="space-y-4">
                             {[
@@ -1634,7 +1637,7 @@ export default function FunctionDetailPage() {
                                 value: testResult.cpuUsage,
                                 color: 'blue',
                                 icon: 'ri-cpu-line',
-                                detail: `${testResult.cpuUsage}% 사용`
+                                detail: `${testResult.cpuUsage}% used`
                               },
                               {
                                 label: 'Network I/O',
@@ -1678,7 +1681,7 @@ export default function FunctionDetailPage() {
                     ) : (
                       <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                         <i className="ri-bar-chart-line text-6xl mb-4"></i>
-                        <p>테스트를 먼저 실행해주세요</p>
+                        <p>Please run a test first</p>
                       </div>
                     )}
                   </div>
@@ -1696,7 +1699,7 @@ export default function FunctionDetailPage() {
                     }}
                     className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer"
                   >
-                    닫기
+                    Close
                   </button>
                   <button
                     onClick={handleTestRun}
@@ -1704,7 +1707,7 @@ export default function FunctionDetailPage() {
                     className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <i className="ri-play-line"></i>
-                    {isTestRunning ? '실행 중...' : '테스트 실행'}
+                    {isTestRunning ? 'Running...' : 'Run Test'}
                   </button>
                 </div>
               </div>
@@ -1719,8 +1722,8 @@ export default function FunctionDetailPage() {
               <i className="ri-check-line text-xl text-white"></i>
             </div>
             <div>
-              <div className="font-bold text-gray-900">최적값이 적용되었습니다</div>
-              <div className="text-sm text-gray-600">다음 배포 설정에 저장되었습니다</div>
+              <div className="font-bold text-gray-900">Optimal value applied</div>
+              <div className="text-sm text-gray-600">Saved to next deployment settings</div>
             </div>
           </div>
         )}

@@ -35,11 +35,11 @@ export default function Sidebar({ systemStatus: externalStatus, onSystemStatusCl
   const systemStatus = externalStatus ?? internalStatus;
 
   const menuItems = [
-    { path: '/dashboard', icon: 'ri-dashboard-line', label: '대시보드' },
-    { path: '/deploy', icon: 'ri-upload-cloud-line', label: '함수 배포' },
-    { path: '/logs', icon: 'ri-file-list-line', label: '실행 로그' },
-    { path: '/metrics', icon: 'ri-bar-chart-box-line', label: '모니터링' },
-    { path: '/settings', icon: 'ri-settings-3-line', label: '설정' },
+    { path: '/dashboard', icon: 'ri-dashboard-line', label: 'Dashboard' },
+    { path: '/deploy', icon: 'ri-upload-cloud-line', label: 'Deploy Function' },
+    { path: '/logs', icon: 'ri-file-list-line', label: 'Execution Logs' },
+    { path: '/metrics', icon: 'ri-bar-chart-box-line', label: 'Monitoring' },
+    { path: '/settings', icon: 'ri-settings-3-line', label: 'Settings' },
   ];
 
   return (
