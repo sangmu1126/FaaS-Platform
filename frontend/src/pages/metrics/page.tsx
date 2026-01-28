@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
 import { functionApi } from '../../services/functionApi';
-import { logApi } from '../../services/logApi';
+// logApi import removed - not currently used
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     BarChart, Bar, PieChart, Pie, Cell
@@ -31,7 +31,7 @@ export default function MetricsPage() {
     const [timeSeriesData, setTimeSeriesData] = useState<MetricData[]>([]);
     const [functionMetrics, setFunctionMetrics] = useState<FunctionMetric[]>([]);
     const [poolStatus, setPoolStatus] = useState<PoolStatus[]>([]);
-    const [systemStatus, setSystemStatus] = useState<any>(null);
+    // Prometheus data is currently fetched via dashboard/stats API
     const [prometheusData, setPrometheusData] = useState<{ totalRequests: number; avgDuration: number; errorRate: number }>({
         totalRequests: 0,
         avgDuration: 0,
@@ -43,6 +43,7 @@ export default function MetricsPage() {
         successRate: 100,
         activeWorkers: 0
     });
+    // debugInfo removed - no longer needed
     const prevMetricsRef = useRef({ totalRequests: 0, accumulatedDuration: 0 });
 
     // Parse Prometheus text format
@@ -57,7 +58,7 @@ export default function MetricsPage() {
 
             // Parse function_invocations_total
             if (line.includes('function_invocations_total')) {
-                const match = line.match(/function_invocations_total\{[^}]*\}\s+(\d+)/); // Counter is integer usually, but prom client output is float-like often.
+                // Parse format: function_invocations_total{...} 5
                 // Actually prom-client output format: function_invocations_total{...} 5
                 // The regex \s+(\d+) might miss if it is 5.0? Prom-client usually outputs integers for counters if inc(1).
                 // Let's use flexible regex.
@@ -168,7 +169,7 @@ export default function MetricsPage() {
 
                 // Real-time Time Series Accumulation obtained from latest fetch
                 const now = new Date();
-                const timeLabel = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const timeLabel = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
                 // Use latest parsed data if available (from local scope if we refactored, but here we use state which might be slightly delayed 
                 // but acceptable for 5s interval, or better: use values we just fetched if possible)
@@ -178,35 +179,45 @@ export default function MetricsPage() {
                 // Better to just push the current point?
                 // Actually, let's keep it simple: Add point if we have data.
 
+                // Calculate Real-time Delta for Throughput Chart
+                const latestTotalRequests = dashboardStats?.totalExecutions || 0;
+                const latestAvgDuration = dashboardStats?.avgResponseTime || 0;
+                const currentTotalDuration = latestTotalRequests * latestAvgDuration;
+
+                const prev = prevMetricsRef.current;
+                let deltaRequests = 0;
+                let windowedAvgDuration = 0;
+
+
+
+                // Only calculate delta if we have a previous value (not first load)
+                if (prev.totalRequests > 0) {
+                    deltaRequests = Math.max(0, latestTotalRequests - prev.totalRequests);
+
+                    const deltaDuration = Math.max(0, currentTotalDuration - prev.accumulatedDuration);
+
+                    if (deltaRequests > 0) {
+                        windowedAvgDuration = Math.round(deltaDuration / deltaRequests);
+                    }
+                }
+
+                // Update Ref for next iteration
+                if (latestTotalRequests > 0) {
+                    prevMetricsRef.current = {
+                        totalRequests: latestTotalRequests,
+                        accumulatedDuration: currentTotalDuration
+                    };
+                }
+
+                const newPoint = {
+                    time: timeLabel,
+                    invocations: deltaRequests, // Throughput (Requests per 5s)
+                    avgDuration: windowedAvgDuration // Real-time Avg (Windowed)
+                };
+
                 setTimeSeriesData(prevSeries => {
-                    const latestMetrics = {
-                        totalRequests: dashboardStats?.totalExecutions || prometheusData.totalRequests || 0,
-                        avgDuration: dashboardStats?.avgResponseTime || prometheusData.avgDuration || 0
-                    };
-
-                    const prev = prevMetricsRef.current;
-                    let deltaRequests = 0;
-
-                    // Only calculate delta if we have a previous value (not first load)
-                    if (prev.totalRequests > 0) {
-                        deltaRequests = Math.max(0, latestMetrics.totalRequests - prev.totalRequests);
-                    }
-
-                    // Update Ref
-                    if (latestMetrics.totalRequests > 0) {
-                        prevMetricsRef.current = {
-                            totalRequests: latestMetrics.totalRequests,
-                            accumulatedDuration: 0
-                        };
-                    }
-
-                    const newPoint = {
-                        time: timeLabel,
-                        invocations: deltaRequests,
-                        avgDuration: latestMetrics.avgDuration
-                    };
                     const updated = [...prevSeries, newPoint];
-                    return updated.length > 12 ? updated.slice(updated.length - 12) : updated;
+                    return updated.length > 60 ? updated.slice(updated.length - 60) : updated;
                 });
 
                 // Calculate Runtime Distribution from Functions
@@ -237,9 +248,7 @@ export default function MetricsPage() {
         fetchData();
         const interval = setInterval(fetchData, 5000);
         return () => clearInterval(interval);
-    }, [prometheusData.avgDuration, prometheusData.totalRequests]);
-
-    const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#06B6D4', '#8B5CF6'];
+    }, []);
 
     return (
         <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100">
@@ -253,7 +262,7 @@ export default function MetricsPage() {
                         {/* Page Header */}
                         <div className="mb-8">
                             <h1 className="text-3xl font-bold text-gray-900 mb-2">📊 Metrics Dashboard</h1>
-                            <p className="text-gray-600">실시간 시스템 모니터링 및 성능 분석</p>
+                            <p className="text-gray-600">Real-time system monitoring and performance analysis</p>
                         </div>
 
                         {/* Stats Overview */}
@@ -265,7 +274,7 @@ export default function MetricsPage() {
                                     </div>
                                     <div>
                                         <div className="text-2xl font-bold text-gray-900">{totalStats.totalInvocations.toLocaleString()}</div>
-                                        <div className="text-sm text-gray-600">총 호출 수</div>
+                                        <div className="text-sm text-gray-600">Total Invocations</div>
                                     </div>
                                 </div>
                             </div>
@@ -277,7 +286,7 @@ export default function MetricsPage() {
                                     </div>
                                     <div>
                                         <div className="text-2xl font-bold text-gray-900">{totalStats.avgResponseTime}ms</div>
-                                        <div className="text-sm text-gray-600">평균 응답 시간</div>
+                                        <div className="text-sm text-gray-600">Avg Response Time</div>
                                     </div>
                                 </div>
                             </div>
@@ -289,7 +298,7 @@ export default function MetricsPage() {
                                     </div>
                                     <div>
                                         <div className="text-2xl font-bold text-gray-900">{totalStats.successRate}%</div>
-                                        <div className="text-sm text-gray-600">성공률</div>
+                                        <div className="text-sm text-gray-600">Success Rate</div>
                                     </div>
                                 </div>
                             </div>
@@ -301,7 +310,7 @@ export default function MetricsPage() {
                                     </div>
                                     <div>
                                         <div className="text-2xl font-bold text-gray-900">{totalStats.activeWorkers}</div>
-                                        <div className="text-sm text-gray-600">등록된 함수</div>
+                                        <div className="text-sm text-gray-600">Registered Functions</div>
                                     </div>
                                 </div>
                             </div>
@@ -313,7 +322,7 @@ export default function MetricsPage() {
                             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-200 shadow-sm">
                                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                                     <i className="ri-line-chart-line text-blue-600"></i>
-                                    호출 추이 (5초당 건수)
+                                    Invocation Trend (per 5 seconds)
                                 </h3>
                                 <div className="h-64">
                                     <ResponsiveContainer width="100%" height="100%">
@@ -345,7 +354,7 @@ export default function MetricsPage() {
                             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-200 shadow-sm">
                                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                                     <i className="ri-speed-line text-green-600"></i>
-                                    응답 시간 (ms)
+                                    Response Time (ms)
                                 </h3>
                                 <div className="h-64">
                                     <ResponsiveContainer width="100%" height="100%">
@@ -377,7 +386,7 @@ export default function MetricsPage() {
                             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-200 shadow-sm">
                                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                                     <i className="ri-pie-chart-line text-purple-600"></i>
-                                    함수 런타임 분포
+                                    Function Runtime Distribution
                                 </h3>
                                 <div className="h-48">
                                     <ResponsiveContainer width="100%" height="100%">
@@ -416,16 +425,16 @@ export default function MetricsPage() {
                             <div className="lg:col-span-2 bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-200 shadow-sm">
                                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                                     <i className="ri-trophy-line text-amber-600"></i>
-                                    Top 호출 함수
+                                    Top Invoked Functions
                                 </h3>
                                 <div className="overflow-x-auto">
                                     <table className="w-full">
                                         <thead>
                                             <tr className="border-b border-gray-200">
-                                                <th className="text-left py-3 text-sm font-semibold text-gray-700">함수명</th>
-                                                <th className="text-right py-3 text-sm font-semibold text-gray-700">호출 수</th>
-                                                <th className="text-right py-3 text-sm font-semibold text-gray-700">평균 응답</th>
-                                                <th className="text-right py-3 text-sm font-semibold text-gray-700">성공률</th>
+                                                <th className="text-left py-3 text-sm font-semibold text-gray-700">Function</th>
+                                                <th className="text-right py-3 text-sm font-semibold text-gray-700">Invocations</th>
+                                                <th className="text-right py-3 text-sm font-semibold text-gray-700">Avg Response</th>
+                                                <th className="text-right py-3 text-sm font-semibold text-gray-700">Success Rate</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -455,7 +464,7 @@ export default function MetricsPage() {
                                             {functionMetrics.length === 0 && (
                                                 <tr>
                                                     <td colSpan={4} className="py-8 text-center text-gray-500">
-                                                        아직 호출된 함수가 없습니다.
+                                                        No functions have been invoked yet.
                                                     </td>
                                                 </tr>
                                             )}
@@ -468,6 +477,7 @@ export default function MetricsPage() {
 
                     </div>
                 </main>
+                {/* DEBUG SECTION */}
             </div>
         </div>
     );

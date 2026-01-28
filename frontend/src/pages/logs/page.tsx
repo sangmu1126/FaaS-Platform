@@ -153,7 +153,7 @@ export default function LogsPage() {
   };
 
   const handleApplyFilters = () => {
-    // 필터 적용 시 첫 페이지로 이동
+    // Go to first page when filter is applied
     setCurrentPage(1);
   };
 
@@ -163,7 +163,7 @@ export default function LogsPage() {
     setCurrentPage(1);
   };
 
-  // 필터링된 로그
+  // Filtered logs
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
       const functionMatch = selectedFunction === 'all' || log.functionName === selectedFunction;
@@ -172,13 +172,13 @@ export default function LogsPage() {
     });
   }, [logs, selectedFunction, selectedLevel]);
 
-  // 페이지네이션 계산
+  // Pagination calculation
   const totalPages = Math.ceil(filteredLogs.length / logsPerPage);
   const startIndex = (currentPage - 1) * logsPerPage;
   const endIndex = startIndex + logsPerPage;
   const currentLogs = filteredLogs.slice(startIndex, endIndex);
 
-  // 페이지 변경 핸들러
+  // Page change handler
   const handlePreviousPage = () => {
     if (currentPage > 1) {
       setCurrentPage(currentPage - 1);
@@ -191,7 +191,7 @@ export default function LogsPage() {
     }
   };
 
-  // 필터 변경 시 첫 페이지로 리셋
+  // Reset to first page when filter changes
   const handleFunctionChange = (value: string) => {
     setSelectedFunction(value);
     setCurrentPage(1);
@@ -209,14 +209,14 @@ export default function LogsPage() {
   // Helper for Status Badge
   const getStatusConfig = (status: string) => {
     switch (status) {
-      case 'SUCCESS': return { color: 'bg-green-50 text-green-700 border-green-200', label: '성공', icon: 'ri-check-line' };
-      case 'ERROR': return { color: 'bg-red-50 text-red-700 border-red-200', label: '실패', icon: 'ri-close-line' };
-      case 'PENDING': return { color: 'bg-yellow-50 text-yellow-700 border-yellow-200', label: '대기', icon: 'ri-loader-4-line animate-spin' };
-      case 'UPLOAD': return { color: 'bg-blue-50 text-blue-700 border-blue-200', label: '업로드', icon: 'ri-upload-cloud-line' };
-      case 'UPDATE': return { color: 'bg-purple-50 text-purple-700 border-purple-200', label: '업데이트', icon: 'ri-refresh-line' };
-      case 'DELETE': return { color: 'bg-gray-50 text-gray-700 border-gray-200', label: '삭제', icon: 'ri-delete-bin-line' };
-      case 'TIMEOUT': return { color: 'bg-orange-50 text-orange-700 border-orange-200', label: '시간초과', icon: 'ri-timer-line' };
-      default: return { color: 'bg-gray-50 text-gray-600 border-gray-200', label: '시스템', icon: 'ri-information-line' };
+      case 'SUCCESS': return { color: 'bg-green-50 text-green-700 border-green-200', label: 'Success', icon: 'ri-check-line' };
+      case 'ERROR': return { color: 'bg-red-50 text-red-700 border-red-200', label: 'Failure', icon: 'ri-close-line' };
+      case 'PENDING': return { color: 'bg-yellow-50 text-yellow-700 border-yellow-200', label: 'Pending', icon: 'ri-loader-4-line animate-spin' };
+      case 'UPLOAD': return { color: 'bg-blue-50 text-blue-700 border-blue-200', label: 'Upload', icon: 'ri-upload-cloud-line' };
+      case 'UPDATE': return { color: 'bg-purple-50 text-purple-700 border-purple-200', label: 'Update', icon: 'ri-refresh-line' };
+      case 'DELETE': return { color: 'bg-gray-50 text-gray-700 border-gray-200', label: 'Delete', icon: 'ri-delete-bin-line' };
+      case 'TIMEOUT': return { color: 'bg-orange-50 text-orange-700 border-orange-200', label: 'Timeout', icon: 'ri-timer-line' };
+      default: return { color: 'bg-gray-50 text-gray-600 border-gray-200', label: 'System', icon: 'ri-information-line' };
     }
   };
 
@@ -230,21 +230,21 @@ export default function LogsPage() {
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto px-6 py-8">
             <div className="mb-6">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">실행 로그</h1>
-              <p className="text-gray-600">모든 함수의 실행 로그를 실시간으로 확인하세요</p>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Execution Logs</h1>
+              <p className="text-gray-600">View execution logs for all functions in real-time</p>
             </div>
 
             {/* Filters */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200 p-6 shadow-sm mb-6">
               <div className="grid md:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">함수 선택</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Select Function</label>
                   <select
                     value={selectedFunction}
                     onChange={(e) => handleFunctionChange(e.target.value)}
                     className="w-full px-4 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
                   >
-                    <option value="all">전체 함수</option>
+                    <option value="all">All Functions</option>
                     {functionsList.map(func => (
                       <option key={func.id} value={func.name}>{func.name}</option>
                     ))}
@@ -252,13 +252,13 @@ export default function LogsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">로그 레벨</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Log Level</label>
                   <select
                     value={selectedLevel}
                     onChange={(e) => handleLevelChange(e.target.value)}
                     className="w-full px-4 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
                   >
-                    <option value="all">전체</option>
+                    <option value="all">All</option>
                     <option value="info">Info</option>
                     <option value="warning">Warning</option>
                     <option value="error">Error</option>
@@ -266,18 +266,24 @@ export default function LogsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">시작 시간</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Start Time</label>
                   <input
-                    type="datetime-local"
-                    className="w-full px-4 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                    type="text"
+                    placeholder="MM/DD/YYYY --:--"
+                    onFocus={(e) => (e.target.type = "datetime-local")}
+                    onBlur={(e) => !e.target.value && (e.target.type = "text")}
+                    className="w-full px-4 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all font-sans placeholder-gray-400"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">종료 시간</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">End Time</label>
                   <input
-                    type="datetime-local"
-                    className="w-full px-4 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                    type="text"
+                    placeholder="MM/DD/YYYY --:--"
+                    onFocus={(e) => (e.target.type = "datetime-local")}
+                    onBlur={(e) => !e.target.value && (e.target.type = "text")}
+                    className="w-full px-4 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all font-sans placeholder-gray-400"
                   />
                 </div>
               </div>
@@ -287,13 +293,13 @@ export default function LogsPage() {
                   onClick={handleApplyFilters}
                   className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer text-sm"
                 >
-                  필터 적용
+                  Apply Filters
                 </button>
                 <button
                   onClick={handleResetFilters}
                   className="px-4 py-2 bg-white border border-blue-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer text-sm"
                 >
-                  초기화
+                  Reset
                 </button>
                 <div className="flex-1"></div>
                 <button
@@ -309,9 +315,9 @@ export default function LogsPage() {
             {/* Logs List */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200 shadow-sm">
               <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">로그 목록</h2>
+                <h2 className="text-lg font-bold text-gray-900">Log List</h2>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">자동 새로고침</span>
+                  <span className="text-sm text-gray-600">Auto Refresh</span>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" className="sr-only peer" />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-400 peer-checked:to-pink-400"></div>
@@ -359,13 +365,13 @@ export default function LogsPage() {
                             {/* Col 3: Metrics */}
                             <div className="col-span-4 flex items-center gap-6">
                               <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-0.5">응답 시간</span>
+                                <span className="text-xs text-gray-500 mb-0.5">Response Time</span>
                                 <span className="text-sm font-mono font-medium text-gray-700">
                                   {log.duration ? `${log.duration}ms` : '-'}
                                 </span>
                               </div>
                               <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-0.5">메모리</span>
+                                <span className="text-xs text-gray-500 mb-0.5">Memory</span>
                                 <span className="text-sm font-mono font-medium text-gray-700">
                                   {/* @ts-ignore */}
                                   {log.memory ? `${log.memory} MB` : '-'}
@@ -408,7 +414,7 @@ export default function LogsPage() {
               </div>
 
               <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-                <span className="text-sm text-gray-600">총 {filteredLogs.length}개의 로그</span>
+                <span className="text-sm text-gray-600">Total {filteredLogs.length} logs</span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handlePreviousPage}
@@ -418,7 +424,7 @@ export default function LogsPage() {
                       : 'hover:bg-gray-50'
                       }`}
                   >
-                    이전
+                    Previous
                   </button>
                   <span className="text-sm text-gray-600">{currentPage} / {totalPages}</span>
                   <button
@@ -429,7 +435,7 @@ export default function LogsPage() {
                       : 'hover:bg-gray-50'
                       }`}
                   >
-                    다음
+                    Next
                   </button>
                 </div>
               </div>

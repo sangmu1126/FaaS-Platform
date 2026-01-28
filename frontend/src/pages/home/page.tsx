@@ -46,7 +46,7 @@ export default function Home() {
             onClick={handleGetStarted}
             className="px-6 py-2.5 bg-gradient-to-r from-purple-400 to-pink-400 text-white text-sm font-semibold rounded-full hover:shadow-lg transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer"
           >
-            대시보드 시작
+            Go to Dashboard
             <i className="ri-arrow-right-line"></i>
           </button>
         </div>
@@ -74,15 +74,15 @@ export default function Home() {
               </h1>
 
               <p className="text-gray-600 text-lg leading-relaxed mb-8 max-w-xl">
-                AWS Lambda의 구조적 한계를 넘어선 자체 FaaS 엔진. Docker 기반 멀티 테넌트 격리로 어떤 언어든 즉시 실행.
+                A custom FaaS engine that goes beyond AWS Lambda's structural limitations. Docker-based multi-tenant isolation for instant execution of any language.
               </p>
 
               <div className="flex flex-wrap gap-4">
                 <button className="px-8 py-3.5 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-full hover:shadow-lg transition-all whitespace-nowrap cursor-pointer">
-                  시작하기
+                  Get Started
                 </button>
                 <button className="px-8 py-3.5 bg-white/60 backdrop-blur-sm text-gray-700 font-semibold rounded-full hover:bg-white/80 transition-all whitespace-nowrap cursor-pointer border border-gray-200">
-                  문서 보기
+                  View Documentation
                 </button>
               </div>
             </div>
@@ -132,11 +132,11 @@ export default function Home() {
             </h2>
 
             <p className="text-gray-600 text-lg leading-relaxed mb-10">
-              Warm Pool + Docker Pause/Unpause 전략으로 VM 부팅 과정 제거. Firecracker 없이 직접 구현한 초고속 실행 환경.
+              Eliminates VM boot process with Warm Pool + Docker Pause/Unpause strategy. Ultra-fast execution environment built without Firecracker.
             </p>
 
             <button className="px-8 py-3.5 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-full hover:shadow-lg transition-all whitespace-nowrap cursor-pointer inline-flex items-center gap-2">
-              벤치마크 보기
+              View Benchmarks
               <i className="ri-arrow-right-line"></i>
             </button>
           </div>
@@ -152,7 +152,7 @@ export default function Home() {
               <div>Outperforms</div>
             </h2>
             <p className="text-gray-500 text-lg max-w-md">
-              구조적 문제를 근본부터 해결한 차세대 FaaS 플랫폼
+              A next-generation FaaS platform that solves structural problems from the ground up
             </p>
           </div>
 
@@ -163,7 +163,7 @@ export default function Home() {
               </div>
               <h3 className="text-2xl font-bold text-gray-900 mb-4">Instant Optimization</h3>
               <p className="text-gray-600 leading-relaxed">
-                단일 실행만으로 최적 스펙 산출. AWS Compute Optimizer보다 빠른 비용 절감. 며칠치 로그 없이 즉시 최적값 추천.
+                Calculate optimal specs from a single execution. Faster cost savings than AWS Compute Optimizer. Instant recommendations without days of logs.
               </p>
             </div>
 
@@ -223,7 +223,7 @@ export default function Home() {
               <div>Same Architecture</div>
             </h2>
             <p className="text-gray-600 text-lg leading-relaxed">
-              Python 피보나치 45 → 1~2초. C++로 전환 → 즉시 완료. 언어만 바뀌었을 뿐, 실행 방식은 동일합니다.
+              Python Fibonacci 45 → 1-2 seconds. Switch to C++ → instant completion. Only the language changed, execution method is the same.
             </p>
           </div>
 
@@ -278,9 +278,9 @@ export default function Home() {
                 <i className="ri-lightbulb-line text-white text-xl"></i>
               </div>
               <div>
-                <h4 className="text-lg font-bold text-gray-900 mb-2">아키텍처의 유연성</h4>
+                <h4 className="text-lg font-bold text-gray-900 mb-2">Architectural Flexibility</h4>
                 <p className="text-gray-700">
-                  언어가 바뀌었을 뿐, 실행 방식은 동일합니다. FaaS Platform은 어떤 언어든 즉시 실행 가능한 Polyglot FaaS입니다.
+                  Only the language changed, the execution method is the same. FaaS Platform is a Polyglot FaaS that can run any language instantly.
                 </p>
               </div>
             </div>
@@ -293,10 +293,10 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-5xl md:text-6xl font-bold mb-6 text-gray-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-              실제 성능 지표
+              Real Performance Metrics
             </h2>
             <p className="text-gray-500 text-lg">
-              Production 환경에서 검증된 성능
+              Production-verified performance
             </p>
           </div>
 
@@ -304,24 +304,24 @@ export default function Home() {
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-8 border border-purple-100 hover:shadow-lg transition-all">
               <div className="text-5xl font-bold text-purple-500 mb-3">0ms</div>
               <div className="text-gray-700 font-medium mb-2">Cold Start Time</div>
-              <div className="text-gray-500 text-sm">Warm Pool 전략으로 완전 제거</div>
+              <div className="text-gray-500 text-sm">Completely eliminated with Warm Pool strategy</div>
             </div>
 
             <div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-2xl p-8 border border-pink-100 hover:shadow-lg transition-all">
               <div className="text-5xl font-bold text-pink-500 mb-3">85%</div>
-              <div className="text-gray-700 font-medium mb-2">비용 절감</div>
-              <div className="text-gray-500 text-sm">Auto-Tuner 최적화 적용 시</div>
+              <div className="text-gray-700 font-medium mb-2">Cost Savings</div>
+              <div className="text-gray-500 text-sm">With Auto-Tuner optimization applied</div>
             </div>
 
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-100 hover:shadow-lg transition-all">
               <div className="text-5xl font-bold text-blue-500 mb-3">10+</div>
-              <div className="text-gray-700 font-medium mb-2">지원 언어</div>
-              <div className="text-gray-500 text-sm">Python, Node, C++, Go 등</div>
+              <div className="text-gray-700 font-medium mb-2">Supported Languages</div>
+              <div className="text-gray-500 text-sm">Python, Node, C++, Go, etc.</div>
             </div>
 
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-8 border border-green-100 hover:shadow-lg transition-all">
               <div className="text-5xl font-bold text-green-500 mb-3">99.9%</div>
-              <div className="text-gray-700 font-medium mb-2">가용성</div>
+              <div className="text-gray-700 font-medium mb-2">Availability</div>
               <div className="text-gray-500 text-sm">Spot Fleet + Auto Scaling</div>
             </div>
           </div>
@@ -349,12 +349,12 @@ export default function Home() {
                     JK
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900">김준호</div>
+                    <div className="font-bold text-gray-900">Junho Kim</div>
                     <div className="text-sm text-gray-500">Backend Lead, TechCorp</div>
                   </div>
                 </div>
                 <p className="text-gray-700 leading-relaxed">
-                  "Lambda의 Cold Start 문제로 고민하던 중 FaaS Platform을 도입했습니다. 응답 시간이 10배 이상 개선되었고, 비용도 크게 절감되었습니다."
+                  "We adopted FaaS Platform while struggling with Lambda's Cold Start issue. Response times improved by over 10x, and costs were significantly reduced."
                 </p>
               </div>
 
@@ -364,12 +364,12 @@ export default function Home() {
                     SL
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900">이서연</div>
+                    <div className="font-bold text-gray-900">Seoyeon Lee</div>
                     <div className="text-sm text-gray-500">CTO, StartupX</div>
                   </div>
                 </div>
                 <p className="text-gray-700 leading-relaxed">
-                  "멀티 언어 지원이 정말 강력합니다. Python과 C++를 동시에 사용하면서도 일관된 아키텍처를 유지할 수 있어서 개발 생산성이 크게 향상되었습니다."
+                  "Multi-language support is really powerful. Being able to use Python and C++ simultaneously while maintaining a consistent architecture greatly improved development productivity."
                 </p>
               </div>
             </div>
@@ -381,12 +381,12 @@ export default function Home() {
                     MJ
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900">박민준</div>
+                    <div className="font-bold text-gray-900">Minjun Park</div>
                     <div className="text-sm text-gray-500">DevOps Engineer, CloudNet</div>
                   </div>
                 </div>
                 <p className="text-gray-700 leading-relaxed">
-                  "Auto-Tuner 기능이 정말 인상적입니다. 단일 실행만으로 최적 스펙을 추천받아 즉시 적용할 수 있어서 운영 효율이 극대화되었습니다."
+                  "The Auto-Tuner feature is really impressive. Being able to get optimal spec recommendations from a single execution and apply them immediately maximized operational efficiency."
                 </p>
               </div>
 
@@ -396,12 +396,12 @@ export default function Home() {
                     HY
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900">최현우</div>
+                    <div className="font-bold text-gray-900">Hyunwoo Choi</div>
                     <div className="text-sm text-gray-500">Software Architect, DataFlow</div>
                   </div>
                 </div>
                 <p className="text-gray-700 leading-relaxed">
-                  "Production-Grade 아키텍처가 정말 탄탄합니다. Spot Fleet과 Redis 기반 큐 관리로 안정적인 서비스 운영이 가능해졌습니다."
+                  "The Production-Grade architecture is really solid. Stable service operation became possible with Spot Fleet and Redis-based queue management."
                 </p>
               </div>
             </div>
@@ -413,12 +413,12 @@ export default function Home() {
                     YJ
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900">정유진</div>
+                    <div className="font-bold text-gray-900">Yujin Jeong</div>
                     <div className="text-sm text-gray-500">Lead Developer, AILab</div>
                   </div>
                 </div>
                 <p className="text-gray-700 leading-relaxed">
-                  "교육 시장에서 학생들이 C/C++로 작성한 코드를 클라우드에서 바로 실행할 수 있어서 정말 유용합니다. 접근성이 뛰어납니다."
+                  "In the education market, it's really useful that students can run C/C++ code directly in the cloud. The accessibility is excellent."
                 </p>
               </div>
 
@@ -428,12 +428,12 @@ export default function Home() {
                     DH
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900">강동현</div>
+                    <div className="font-bold text-gray-900">Donghyun Kang</div>
                     <div className="text-sm text-gray-500">Platform Engineer, ScaleUp</div>
                   </div>
                 </div>
                 <p className="text-gray-700 leading-relaxed">
-                  "Firecracker 없이 Docker로 직접 구현한 접근 방식이 독창적입니다. 실제로 Cold Start 문제가 완전히 해결되었습니다."
+                  "The approach of implementing directly with Docker without Firecracker is creative. The Cold Start problem was completely resolved."
                 </p>
               </div>
             </div>
@@ -445,17 +445,17 @@ export default function Home() {
       <section className="py-24 bg-gradient-to-br from-purple-400 via-pink-400 to-rose-400 text-white">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <h2 className="text-5xl md:text-6xl font-bold mb-6" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-            지금 바로 시작하세요
+            Get Started Now
           </h2>
           <p className="text-xl text-white/90 mb-10 leading-relaxed">
-            AWS Lambda의 구조적 한계를 넘어선 차세대 FaaS 플랫폼을 경험해보세요.
+            Experience the next-generation FaaS platform that goes beyond AWS Lambda's structural limitations.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <button className="px-10 py-4 bg-white text-purple-600 font-bold rounded-full hover:shadow-xl transition-all whitespace-nowrap cursor-pointer text-lg">
-              무료로 시작하기
+              Start for Free
             </button>
             <button className="px-10 py-4 bg-white/20 backdrop-blur-sm text-white font-bold rounded-full hover:bg-white/30 transition-all whitespace-nowrap cursor-pointer border-2 border-white text-lg">
-              데모 요청하기
+              Request Demo
             </button>
           </div>
         </div>
@@ -478,7 +478,7 @@ export default function Home() {
               <div className="flex items-center gap-3">
                 <input
                   type="email"
-                  placeholder="이메일 주소"
+                  placeholder="Email address"
                   className="flex-1 px-4 py-2.5 bg-white border border-purple-200 rounded-lg text-sm focus:outline-none focus:border-purple-400 transition-colors"
                 />
                 <button className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg flex items-center justify-center hover:shadow-lg transition-all cursor-pointer">

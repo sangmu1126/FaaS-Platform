@@ -57,11 +57,11 @@ export default function DeployPage() {
     FaaS Function Handler
     
     Args:
-        event: 입력 이벤트 데이터
-        context: 실행 컨텍스트
+        event: Input event data
+        context: Execution context
     
     Returns:
-        응답 데이터
+        Response data
     """
     return {
         'statusCode': 200,
@@ -85,9 +85,9 @@ if __name__ == "__main__":
     /**
      * FaaS Function Handler
      * 
-     * @param {Object} event - 입력 이벤트 데이터
-     * @param {Object} context - 실행 컨텍스트
-     * @returns {Object} 응답 데이터
+     * @param {Object} event - Input event data
+     * @param {Object} context - Execution context
+     * @returns {Object} Response data
      */
     return {
         statusCode: 200,
@@ -308,7 +308,7 @@ func main() {
     if (!file) return;
 
     if (file.size > 1024 * 1024) {
-      alert('파일 크기가 너무 큽니다. 1MB 이하의 파일만 업로드 가능합니다.');
+      alert('File size is too large. Only files under 1MB can be uploaded.');
       return;
     }
 
@@ -318,7 +318,7 @@ func main() {
       setFormData({ ...formData, code: content });
     };
     reader.onerror = () => {
-      alert('파일을 읽는 중 오류가 발생했습니다.');
+      alert('An error occurred while reading the file.');
     };
     reader.readAsText(file);
   };
@@ -350,7 +350,7 @@ func main() {
 
   const handleTestRun = async () => {
     if (!deployedFunctionId) {
-      alert("배포된 함수 ID를 찾을 수 없습니다.");
+      alert("Deployed function ID not found.");
       return;
     }
 
@@ -420,48 +420,48 @@ func main() {
     {
       icon: 'ri-package-line',
       title: '📦 Code Packaging & Upload',
-      description: '소스 코드를 압축하여 S3 보안 버킷에 저장합니다.',
-      detail: `s3://code-bucket/${formData.name}/v1.zip 업로드 중...`,
+      description: 'Compressing source code and storing in secure S3 bucket.',
+      detail: `Uploading to s3://code-bucket/${formData.name}/v1.zip...`,
       color: 'from-blue-400 to-cyan-400',
       errorMessages: [
-        '코드 압축 중 오류가 발생했습니다.',
-        'S3 버킷 연결에 실패했습니다.',
-        '파일 크기가 너무 큽니다 (최대 50MB).',
-        '네트워크 연결이 불안정합니다.'
+        'An error occurred during code compression.',
+        'Failed to connect to S3 bucket.',
+        'File size is too large (max 50MB).',
+        'Network connection is unstable.'
       ]
     },
     {
       icon: 'ri-file-list-3-line',
       title: '📝 Metadata Registration',
-      description: 'DynamoDB에 함수 설정(메모리, 런타임)을 기록합니다.',
-      detail: '함수 ID 및 설정값 등록 중...',
+      description: 'Recording function settings (memory, runtime) in DynamoDB.',
+      detail: 'Registering function ID and configuration...',
       color: 'from-purple-400 to-pink-400',
       errorMessages: [
-        'DynamoDB 연결에 실패했습니다.',
-        '중복된 함수명이 존재합니다.',
-        '메타데이터 형식이 올바르지 않습니다.',
-        '권한이 부족합니다.'
+        'Failed to connect to DynamoDB.',
+        'Duplicate function name exists.',
+        'Metadata format is invalid.',
+        'Insufficient permissions.'
       ]
     },
     {
       icon: 'ri-rocket-line',
       title: '🚀 Optimizing for Warm Start',
-      description: '실행 지연 제거를 위해 소스 코드를 Worker에 미리 전송(Pre-load)합니다.',
-      detail: 'Warm Pool에 컨테이너 예열 신호 전송 중...',
+      description: 'Pre-loading source code to Worker for zero execution delay.',
+      detail: 'Sending warm-up signal to Warm Pool...',
       color: 'from-orange-400 to-red-400',
       highlight: true,
       errorMessages: [
-        'Worker Node와 통신에 실패했습니다.',
-        '컨테이너 이미지를 가져올 수 없습니다.',
-        'Warm Pool이 현재 사용 불가능합니다.',
-        '런타임 환경 초기화에 실패했습니다.'
+        'Failed to communicate with Worker Node.',
+        'Unable to pull container image.',
+        'Warm Pool is currently unavailable.',
+        'Failed to initialize runtime environment.'
       ]
     },
     {
       icon: 'ri-checkbox-circle-line',
       title: '✅ Ready to Run',
-      description: '배포 완료! 예상 Cold Start 시간: 0ms',
-      detail: 'Warm Pool에 의해 보호되고 있습니다.',
+      description: 'Deployment complete! Expected Cold Start time: 0ms',
+      detail: 'Protected by Warm Pool.',
       color: 'from-green-400 to-emerald-400',
       errorMessages: []
     }
@@ -490,9 +490,9 @@ func main() {
 
               <div className="relative z-10 flex justify-between">
                 {[
-                  { step: 1, label: '기본 설정' },
-                  { step: 2, label: '코드 작성' },
-                  { step: 3, label: '배포 확인' }
+                  { step: 1, label: 'Basic Setup' },
+                  { step: 2, label: 'Write Code' },
+                  { step: 3, label: 'Deploy' }
                 ].map((item) => (
                   <div
                     key={item.step}
@@ -500,8 +500,8 @@ func main() {
                     onClick={() => item.step < currentStep && setCurrentStep(item.step)}
                   >
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all duration-300 border-2 z-20 bg-white ${currentStep >= item.step
-                        ? 'border-transparent bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg scale-110'
-                        : 'text-gray-400 border-gray-200 group-hover:border-gray-300'
+                      ? 'border-transparent bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg scale-110'
+                      : 'text-gray-400 border-gray-200 group-hover:border-gray-300'
                       }`}>
                       {item.step}
                     </div>
@@ -517,12 +517,12 @@ func main() {
             {/* Step 1: Basic Configuration */}
             {currentStep === 1 && (
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200 p-8 shadow-sm">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">기본 설정</h2>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Basic Setup</h2>
 
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      함수명
+                      Function Name
                     </label>
                     <input
                       type="text"
@@ -531,12 +531,12 @@ func main() {
                       placeholder="my-function"
                       className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all"
                     />
-                    <p className="mt-2 text-xs text-gray-500">소문자, 숫자, 하이픈만 사용 가능합니다</p>
+                    <p className="mt-2 text-xs text-gray-500">Only lowercase letters, numbers, and hyphens allowed</p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      핸들러 (Handler)
+                      Handler
                     </label>
                     <div className="relative">
                       <input
@@ -558,14 +558,14 @@ func main() {
                     </div>
                     <p className="mt-2 text-xs text-gray-500">
                       {isHandlerDisabled
-                        ? '바이너리 실행 파일이므로 main 함수가 자동으로 실행됩니다.'
-                        : '진입점 함수를 입력하세요 (예: handler.main, index.handler)'}
+                        ? 'Binary executable, main function runs automatically.'
+                        : 'Enter the entry point function (e.g., handler.main, index.handler)'}
                     </p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-3">
-                      프로그래밍 언어 (Runtime)
+                      Runtime (Programming Language)
                     </label>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       {languages.map((lang) => (
@@ -591,7 +591,7 @@ func main() {
                     </div>
                     <div className="mt-3 flex items-center gap-2 text-xs text-gray-600 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg px-3 py-2">
                       <i className="ri-information-line text-blue-600"></i>
-                      <span>최신 안정 버전({languages.find(l => l.id === formData.language)?.version})이 자동으로 적용됩니다</span>
+                      <span>Latest stable version ({languages.find(l => l.id === formData.language)?.version}) is automatically applied</span>
                     </div>
                   </div>
 
@@ -603,7 +603,7 @@ func main() {
                           <i className="ri-fire-fill text-xl text-white"></i>
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-gray-900">⚡ 성능 옵션 (Performance)</h3>
+                          <h3 className="text-lg font-bold text-gray-900">⚡ Performance Options</h3>
                         </div>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
@@ -621,9 +621,9 @@ func main() {
                       <div className="flex items-start gap-3">
                         <i className="ri-flashlight-fill text-orange-600 text-xl flex-shrink-0 mt-0.5"></i>
                         <div>
-                          <h4 className="text-sm font-semibold text-orange-900 mb-1">🔥 Warm Pool 활성화 (Cold Start 방지)</h4>
+                          <h4 className="text-sm font-semibold text-orange-900 mb-1">🔥 Enable Warm Pool (Prevent Cold Start)</h4>
                           <p className="text-xs text-orange-800">
-                            미리 컨테이너를 대기시켜 실행 지연을 제거합니다. Cold Start를 <strong>0ms</strong>로 유지합니다.
+                            Pre-warm containers to eliminate execution delays. Keeps Cold Start at <strong>0ms</strong>.
                           </p>
                         </div>
                       </div>
@@ -633,7 +633,7 @@ func main() {
                   <div className="grid md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        메모리 (MB)
+                        Memory (MB)
                       </label>
                       <select
                         value={formData.memory}
@@ -648,16 +648,16 @@ func main() {
 
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        타임아웃 (초)
+                        Timeout (seconds)
                       </label>
                       <select
                         value={formData.timeout}
                         onChange={(e) => setFormData({ ...formData, timeout: Number(e.target.value) })}
                         className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
                       >
-                        <option value="10">10초</option>
-                        <option value="30">30초</option>
-                        <option value="60">60초</option>
+                        <option value="10">10 sec</option>
+                        <option value="30">30 sec</option>
+                        <option value="60">60 sec</option>
                       </select>
                     </div>
                   </div>
@@ -666,12 +666,12 @@ func main() {
                     <div className="flex items-start gap-3">
                       <i className="ri-lightbulb-line text-blue-600 text-xl flex-shrink-0 mt-0.5"></i>
                       <div>
-                        <h4 className="text-sm font-semibold text-blue-900 mb-1">💡 Auto-Tuner 추천</h4>
+                        <h4 className="text-sm font-semibold text-blue-900 mb-1">💡 Auto-Tuner Recommendation</h4>
                         <p className="text-sm text-blue-800 mb-2">
-                          첫 실행 후 최적 스펙을 자동으로 분석하여 추천해드립니다.
+                          After first execution, we'll automatically analyze and recommend optimal specs.
                         </p>
                         <div className="text-sm text-blue-700">
-                          예상 비용 절감: <strong>최대 85%</strong>
+                          Estimated cost savings: <strong>up to 85%</strong>
                         </div>
                       </div>
                     </div>
@@ -680,7 +680,7 @@ func main() {
                   {/* Environment Variables */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-3">
-                      🔑 환경 변수 (Environment Variables)
+                      🔑 Environment Variables
                     </label>
                     <div className="space-y-3">
                       {formData.envVars.map((envVar, index) => (
@@ -712,10 +712,10 @@ func main() {
                         className="w-full px-6 py-3 bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-dashed border-purple-300 text-blue-600 font-semibold rounded-xl hover:bg-gradient-to-br hover:from-blue-100 hover:to-indigo-100 transition-all cursor-pointer flex items-center justify-center gap-2"
                       >
                         <i className="ri-add-line text-xl"></i>
-                        변수 추가
+                        Add Variable
                       </button>
                     </div>
-                    <p className="mt-3 text-xs text-gray-500">API Key, DB URL 등 민감한 정보를 안전하게 관리합니다</p>
+                    <p className="mt-3 text-xs text-gray-500">Safely manage sensitive information like API Keys and DB URLs</p>
                   </div>
                 </div>
 
@@ -724,14 +724,14 @@ func main() {
                     onClick={() => navigate('/dashboard')}
                     className="px-6 py-3 bg-white border border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer"
                   >
-                    취소
+                    Cancel
                   </button>
                   <button
                     onClick={() => setCurrentStep(2)}
                     disabled={!formData.name}
                     className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    다음 단계 (코드 작성)
+                    Next Step (Write Code)
                   </button>
                 </div>
               </div>
@@ -740,12 +740,12 @@ func main() {
             {/* Step 2: Code Editor */}
             {currentStep === 2 && (
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200 p-8 shadow-sm">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">코드 작성</h2>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Write Code</h2>
 
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-3">
                     <label className="text-sm font-semibold text-gray-700">
-                      함수 코드
+                      Function Code
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -760,14 +760,14 @@ func main() {
                         className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-all whitespace-nowrap cursor-pointer"
                       >
                         <i className="ri-file-upload-line mr-1"></i>
-                        파일 업로드
+                        Upload File
                       </button>
                       <button
                         onClick={handleGithubConnect}
                         className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-all whitespace-nowrap cursor-pointer"
                       >
                         <i className="ri-github-line mr-1"></i>
-                        GitHub 연동
+                        GitHub Connect
                       </button>
                     </div>
                   </div>
@@ -795,11 +795,11 @@ func main() {
                   <div className="flex items-start gap-3">
                     <i className="ri-information-line text-blue-600 text-xl flex-shrink-0 mt-0.5"></i>
                     <div>
-                      <h4 className="text-sm font-semibold text-blue-900 mb-1">함수 작성 가이드</h4>
+                      <h4 className="text-sm font-semibold text-blue-900 mb-1">Function Writing Guide</h4>
                       <ul className="text-sm text-blue-800 space-y-1">
-                        <li>• handler 함수는 event와 context를 매개변수로 받습니다</li>
-                        <li>• 반환값은 statusCode와 body를 포함해야 합니다</li>
-                        <li>• 외부 라이브러리는 requirements.txt에 명시하세요</li>
+                        <li>• Handler function receives event and context as parameters</li>
+                        <li>• Return value must include statusCode and body</li>
+                        <li>• External libraries should be specified in requirements.txt</li>
                       </ul>
                     </div>
                   </div>
@@ -810,20 +810,20 @@ func main() {
                     onClick={() => setCurrentStep(1)}
                     className="px-6 py-3 bg-white border border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer"
                   >
-                    이전 단계
+                    Previous Step
                   </button>
                   <div className="flex gap-3">
                     <button
                       onClick={() => setShowTestModal(true)}
                       className="px-6 py-3 bg-white border-2 border-blue-400 text-blue-600 font-semibold rounded-xl hover:bg-blue-50 transition-all whitespace-nowrap cursor-pointer"
                     >
-                      테스트 실행
+                      Test Run
                     </button>
                     <button
                       onClick={() => setCurrentStep(3)}
                       className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer"
                     >
-                      다음 단계
+                      Next Step
                     </button>
                   </div>
                 </div>
@@ -833,20 +833,20 @@ func main() {
             {/* Step 3: Deploy Confirmation */}
             {currentStep === 3 && (
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200 p-8 shadow-sm">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">배포 확인</h2>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Deploy Confirmation</h2>
 
                 <div className="space-y-6 mb-8">
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-gray-200">
-                      <div className="text-sm text-gray-600 mb-1">함수명</div>
+                      <div className="text-sm text-gray-600 mb-1">Function Name</div>
                       <div className="font-semibold text-gray-900">{formData.name}</div>
                     </div>
                     <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-gray-200">
-                      <div className="text-sm text-gray-600 mb-1">핸들러</div>
+                      <div className="text-sm text-gray-600 mb-1">Handler</div>
                       <div className="font-semibold text-gray-900">{formData.handler}</div>
                     </div>
                     <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-gray-200">
-                      <div className="text-sm text-gray-600 mb-1">언어 / 런타임</div>
+                      <div className="text-sm text-gray-600 mb-1">Language / Runtime</div>
                       <div className="font-semibold text-gray-900">
                         {languages.find(l => l.id === formData.language)?.name} {languages.find(l => l.id === formData.language)?.version}
                       </div>
@@ -854,22 +854,22 @@ func main() {
                     <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-gray-200">
                       <div className="text-sm text-gray-600 mb-1">Warm Pool</div>
                       <div className="font-semibold text-gray-900">
-                        {formData.warmPoolEnabled ? '✅ 활성화' : '❌ 비활성화'}
+                        {formData.warmPoolEnabled ? '✅ Enabled' : '❌ Disabled'}
                       </div>
                     </div>
                     <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-gray-200">
-                      <div className="text-sm text-gray-600 mb-1">메모리</div>
+                      <div className="text-sm text-gray-600 mb-1">Memory</div>
                       <div className="font-semibold text-gray-900">{formData.memory} MB</div>
                     </div>
                     <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-gray-200">
-                      <div className="text-sm text-gray-600 mb-1">타임아웃</div>
-                      <div className="font-semibold text-gray-900">{formData.timeout}초</div>
+                      <div className="text-sm text-gray-600 mb-1">Timeout</div>
+                      <div className="font-semibold text-gray-900">{formData.timeout} seconds</div>
                     </div>
                   </div>
 
                   {formData.envVars.length > 0 && (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
-                      <div className="text-sm font-semibold text-gray-700 mb-3">환경 변수 ({formData.envVars.length}개)</div>
+                      <div className="text-sm font-semibold text-gray-700 mb-3">Environment Variables ({formData.envVars.length})</div>
                       <div className="space-y-2">
                         {formData.envVars.map((envVar, index) => (
                           <div key={index} className="flex items-center gap-3 text-sm">
@@ -886,12 +886,12 @@ func main() {
                     <div className="flex items-start gap-3">
                       <i className="ri-lightbulb-line text-purple-600 text-xl flex-shrink-0 mt-0.5"></i>
                       <div>
-                        <h4 className="text-sm font-semibold text-purple-900 mb-1">Auto-Tuner 추천</h4>
+                        <h4 className="text-sm font-semibold text-purple-900 mb-1">Auto-Tuner Recommendation</h4>
                         <p className="text-sm text-purple-800 mb-2">
-                          첫 실행 후 최적 스펙을 자동으로 분석하여 추천해드립니다.
+                          After first execution, we'll automatically analyze and recommend optimal specs.
                         </p>
                         <div className="text-sm text-purple-700">
-                          예상 비용 절감: <strong>최대 85%</strong>
+                          Estimated cost savings: <strong>up to 85%</strong>
                         </div>
                       </div>
                     </div>
@@ -903,14 +903,14 @@ func main() {
                     onClick={() => setCurrentStep(2)}
                     className="px-6 py-3 bg-white border border-purple-200 text-gray-700 font-semibold rounded-xl hover:bg-purple-50 transition-all whitespace-nowrap cursor-pointer"
                   >
-                    이전 단계
+                    Previous Step
                   </button>
                   <button
                     onClick={handleDeploy}
                     className="px-8 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-2"
                   >
                     <i className="ri-rocket-line"></i>
-                    배포 시작
+                    Start Deploy
                   </button>
                 </div>
               </div>
@@ -925,7 +925,7 @@ func main() {
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 relative">
             <div className="text-center mb-8">
               <h3 className="text-2xl font-bold text-gray-900 mb-2">⚡ Function Deployment</h3>
-              <p className="text-gray-600">함수 배포 중...</p>
+              <p className="text-gray-600">Deploying function...</p>
             </div>
 
             <div className="space-y-6">
@@ -985,10 +985,10 @@ func main() {
                         <div className="mt-3 bg-white/90 rounded-lg p-3 border border-orange-200">
                           <div className="flex items-center gap-2 text-sm font-semibold text-orange-900">
                             <i className="ri-star-fill text-orange-500"></i>
-                            <span>핵심 기능: Cold Start 제거</span>
+                            <span>Core Feature: Zero Cold Start</span>
                           </div>
                           <p className="text-xs text-orange-800 mt-1">
-                            Worker Node와 통신하여 컨테이너를 미리 준비합니다.
+                            Communicating with Worker Nodes to pre-warm containers.
                           </p>
                         </div>
                       )}
@@ -997,7 +997,7 @@ func main() {
                     {deploymentStep > index && (
                       <div className="flex-shrink-0">
                         <span className="text-xs font-semibold text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                          완료
+                          Done
                         </span>
                       </div>
                     )}
@@ -1011,7 +1011,7 @@ func main() {
                 <div className="inline-flex items-center gap-2 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400 rounded-xl px-6 py-3">
                   <i className="ri-shield-check-line text-2xl text-green-600"></i>
                   <span className="font-bold text-green-900">
-                    FaaS Warm Pool에 의해 보호되고 있습니다
+                    Protected by FaaS Warm Pool
                   </span>
                 </div>
               </div>
@@ -1035,16 +1035,16 @@ func main() {
               <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
                 <i className="ri-github-fill text-3xl text-white"></i>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">GitHub 저장소 연동</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Connect GitHub Repository</h3>
               <p className="text-gray-600 text-sm">
-                GitHub 저장소에서 코드를 가져옵니다
+                Import code from GitHub repository
               </p>
             </div>
 
             <div className="space-y-4 mb-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  저장소 URL
+                  Repository URL
                 </label>
                 <input
                   type="text"
@@ -1057,7 +1057,7 @@ func main() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  브랜치
+                  Branch
                 </label>
                 <select
                   value={githubBranch}
@@ -1072,7 +1072,7 @@ func main() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  파일 경로
+                  File Path
                 </label>
                 <input
                   type="text"
@@ -1088,11 +1088,11 @@ func main() {
               <div className="flex items-start gap-3">
                 <i className="ri-information-line text-blue-600 text-lg flex-shrink-0 mt-0.5"></i>
                 <div>
-                  <h4 className="text-sm font-semibold text-blue-900 mb-1">안내사항</h4>
+                  <h4 className="text-sm font-semibold text-blue-900 mb-1">Instructions</h4>
                   <ul className="text-xs text-blue-800 space-y-1">
-                    <li>• Public 저장소만 연동 가능합니다</li>
-                    <li>• Private 저장소는 Personal Access Token이 필요합니다</li>
-                    <li>• 파일 경로는 저장소 루트 기준입니다</li>
+                    <li>• Only public repositories can be connected</li>
+                    <li>• Private repositories require a Personal Access Token</li>
+                    <li>• File path is relative to repository root</li>
                   </ul>
                 </div>
               </div>
@@ -1103,7 +1103,7 @@ func main() {
                 onClick={() => setShowGithubModal(false)}
                 className="flex-1 px-6 py-3 bg-white border border-purple-200 text-gray-700 font-semibold rounded-xl hover:bg-purple-50 transition-all whitespace-nowrap cursor-pointer"
               >
-                취소
+                Cancel
               </button>
               <button
                 onClick={handleGithubImport}
@@ -1111,7 +1111,7 @@ func main() {
                 className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <i className="ri-download-line"></i>
-                코드 가져오기
+                Import Code
               </button>
             </div>
           </div>
@@ -1127,9 +1127,9 @@ func main() {
                 <i className="ri-error-warning-line text-4xl text-white"></i>
               </div>
 
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">배포 실패</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">Deployment Failed</h3>
               <p className="text-gray-600 mb-6">
-                배포 과정 중 오류가 발생했습니다.
+                An error occurred during deployment.
               </p>
 
               {/* Failed Step Info */}
@@ -1152,7 +1152,7 @@ func main() {
                   <div className="flex items-start gap-2 mb-2">
                     <i className="ri-close-circle-line text-red-600 text-lg flex-shrink-0 mt-0.5"></i>
                     <div>
-                      <div className="font-semibold text-red-900 text-sm mb-1">오류 메시지</div>
+                      <div className="font-semibold text-red-900 text-sm mb-1">Error Message</div>
                       <div className="text-sm text-red-800">{failureInfo.message}</div>
                     </div>
                   </div>
@@ -1169,27 +1169,27 @@ func main() {
                 <div className="flex items-start gap-3">
                   <i className="ri-lightbulb-line text-blue-600 text-xl flex-shrink-0 mt-0.5"></i>
                   <div>
-                    <h4 className="text-sm font-semibold text-blue-900 mb-2">해결 방법</h4>
+                    <h4 className="text-sm font-semibold text-blue-900 mb-2">Troubleshooting</h4>
                     <ul className="text-sm text-blue-800 space-y-1">
                       {failureInfo.step === 0 && (
                         <>
-                          <li>• 코드 파일 크기를 확인해주세요 (최대 50MB)</li>
-                          <li>• 네트워크 연결 상태를 확인해주세요</li>
-                          <li>• 잠시 후 다시 시도해주세요</li>
+                          <li>• Check the code file size (max 50MB)</li>
+                          <li>• Check your network connection</li>
+                          <li>• Try again in a few moments</li>
                         </>
                       )}
                       {failureInfo.step === 1 && (
                         <>
-                          <li>• 함수명이 중복되지 않았는지 확인해주세요</li>
-                          <li>• 설정값이 올바른지 확인해주세요</li>
-                          <li>• 계정 권한을 확인해주세요</li>
+                          <li>• Check if the function name is not duplicated</li>
+                          <li>• Verify your configuration values</li>
+                          <li>• Check your account permissions</li>
                         </>
                       )}
                       {failureInfo.step === 2 && (
                         <>
-                          <li>• Worker Node 상태를 확인 중입니다</li>
-                          <li>• 런타임 환경을 다시 선택해주세요</li>
-                          <li>• 시스템 관리자에게 문의해주세요</li>
+                          <li>• Checking Worker Node status</li>
+                          <li>• Re-select the runtime environment</li>
+                          <li>• Contact system administrator</li>
                         </>
                       )}
                     </ul>
@@ -1204,24 +1204,23 @@ func main() {
                   className="w-full px-6 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
                 >
                   <i className="ri-refresh-line text-xl"></i>
-                  다시 시도
+                  Retry
                 </button>
                 <button
                   onClick={handleCancelDeploy}
                   className="w-full px-6 py-3 bg-white border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer"
                 >
-                  취소
+                  Cancel
                 </button>
               </div>
 
               {/* Support Link */}
               <div className="mt-6 pt-6 border-t border-gray-200">
                 <p className="text-sm text-gray-600">
-                  문제가 계속되면{' '}
+                  If the problem persists,{' '}
                   <a href="#" className="text-purple-600 font-semibold hover:underline">
-                    고객 지원팀
+                    contact support
                   </a>
-                  에 문의하세요
                 </p>
               </div>
             </div>
@@ -1245,24 +1244,24 @@ func main() {
                 <i className="ri-check-line text-4xl text-white"></i>
               </div>
 
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">배포 완료!</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">Deployment Complete!</h3>
               <p className="text-gray-600 mb-4">
-                함수가 성공적으로 배포되었습니다.
+                Function has been deployed successfully.
               </p>
 
               <div className="bg-gradient-to-br from-orange-50 to-red-50 border-2 border-orange-300 rounded-xl p-4 mb-6">
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <i className="ri-flashlight-fill text-orange-600 text-xl"></i>
-                  <span className="font-bold text-orange-900">예상 Cold Start 시간</span>
+                  <span className="font-bold text-orange-900">Expected Cold Start Time</span>
                 </div>
                 <div className="text-4xl font-black text-orange-600">0ms</div>
                 <p className="text-xs text-orange-800 mt-2">
-                  Warm Pool 덕분에 즉시 실행 가능합니다
+                  Ready to run instantly thanks to Warm Pool
                 </p>
               </div>
 
               <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 mb-6 border border-gray-200">
-                <div className="text-sm text-gray-600 mb-2">함수 이름</div>
+                <div className="text-sm text-gray-600 mb-2">Function Name</div>
                 <div className="font-semibold text-gray-900">{formData.name}</div>
               </div>
 
@@ -1275,13 +1274,13 @@ func main() {
                   className="w-full px-6 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
                 >
                   <i className="ri-play-circle-line text-xl"></i>
-                  ⚡ 바로 실행하기 (Test Run)
+                  ⚡ Run Test Now
                 </button>
                 <button
                   onClick={handleCloseModal}
                   className="w-full px-6 py-3 bg-white border border-purple-200 text-gray-700 font-semibold rounded-xl hover:bg-purple-50 transition-all whitespace-nowrap cursor-pointer"
                 >
-                  대시보드로 이동
+                  Go to Dashboard
                 </button>
               </div>
             </div>
@@ -1298,9 +1297,9 @@ func main() {
                 <i className="ri-tools-line text-4xl text-white"></i>
               </div>
 
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">🛠️ 빌드 실패 (Build Failed)</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">🛠️ Build Failed</h3>
               <p className="text-gray-600 mb-6">
-                코드 컴파일 중 오류가 발견되었습니다.
+                Compilation errors were found in the code.
               </p>
             </div>
 
@@ -1311,9 +1310,9 @@ func main() {
                   <i className="ri-error-warning-line text-xl text-white"></i>
                 </div>
                 <div className="flex-1">
-                  <h4 className="font-bold text-red-900 mb-1">컴파일 오류</h4>
+                  <h4 className="font-bold text-red-900 mb-1">Compilation Error</h4>
                   <p className="text-sm text-red-800">
-                    C++ 코드에서 문법 오류가 발견되어 빌드를 중단했습니다.
+                    A syntax error was found in the C++ code and the build was aborted.
                   </p>
                 </div>
               </div>
@@ -1340,7 +1339,7 @@ func main() {
                 </div>
                 <div className="text-green-400">
                   <span className="text-gray-500">^</span>
-                  <span className="text-gray-500 ml-2">여기에 문법 오류가 있습니다</span>
+                  <span className="text-gray-500 ml-2">Syntax error here</span>
                 </div>
               </div>
             </div>
@@ -1350,12 +1349,12 @@ func main() {
               <div className="flex items-start gap-3">
                 <i className="ri-lightbulb-line text-blue-600 text-xl flex-shrink-0 mt-0.5"></i>
                 <div>
-                  <h4 className="text-sm font-semibold text-blue-900 mb-2">해결 방법</h4>
+                  <h4 className="text-sm font-semibold text-blue-900 mb-2">Troubleshooting</h4>
                   <ul className="text-sm text-blue-800 space-y-1">
-                    <li>• 코드 편집기로 돌아가 {buildError.line}번째 줄을 확인하세요</li>
-                    <li>• 세미콜론(;), 괄호(), 중괄호{'{}'} 누락 여부를 점검하세요</li>
-                    <li>• 함수 선언과 정의가 일치하는지 확인하세요</li>
-                    <li>• 필요한 헤더 파일(#include)이 모두 포함되었는지 확인하세요</li>
+                    <li>• Go back to the code editor and check line {buildError.line}</li>
+                    <li>• Check for missing semicolons(;), parentheses(), or braces{'{}'}</li>
+                    <li>• Verify function declarations match their definitions</li>
+                    <li>• Ensure all required header files (#include) are included</li>
                   </ul>
                 </div>
               </div>
@@ -1368,20 +1367,20 @@ func main() {
                 className="w-full px-6 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
               >
                 <i className="ri-code-line text-xl"></i>
-                코드 수정하러 가기
+                Go back to edit code
               </button>
               <button
                 onClick={() => setShowBuildErrorModal(false)}
                 className="w-full px-6 py-3 bg-white border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer"
               >
-                닫기
+                Close
               </button>
             </div>
 
             {/* Support Link */}
             <div className="mt-6 pt-6 border-t border-gray-200">
               <p className="text-sm text-gray-600 text-center">
-                💡 FaaS는 배포 전 자동으로 코드를 검증하여 런타임 오류를 방지합니다
+                💡 FaaS automatically validates code before deployment to prevent runtime errors
               </p>
             </div>
           </div>
@@ -1397,9 +1396,9 @@ func main() {
                 <i className="ri-error-warning-line text-4xl text-white"></i>
               </div>
 
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">⚠️ 배포 완료 (경고)</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">⚠️ Deployment Complete (Warning)</h3>
               <p className="text-gray-600 mb-6">
-                함수는 배포되었으나 예열에 실패했습니다.
+                Function deployed but pre-warming failed.
               </p>
 
               {/* Warning Details */}
@@ -1409,21 +1408,21 @@ func main() {
                     <i className="ri-time-line text-xl text-white"></i>
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-bold text-yellow-900 mb-1">Warm Pool 할당 지연</h4>
+                    <h4 className="font-bold text-yellow-900 mb-1">Warm Pool Allocation Delayed</h4>
                     <p className="text-sm text-yellow-800">
-                      현재 사용자가 많아 컨테이너 예열이 지연되고 있습니다.
+                      Container pre-warming is delayed due to high traffic.
                     </p>
                   </div>
                 </div>
 
                 <div className="bg-white/80 rounded-lg p-4 border border-yellow-200">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-semibold text-gray-700">예상 Cold Start 시간</span>
-                    <span className="text-2xl font-bold text-yellow-600">~150ms</span>
+                    <span className="text-sm font-semibold text-gray-700">Expected Cold Start Time</span>
                   </div>
-                  <div className="text-xs text-gray-600">
-                    첫 실행 시 컨테이너 초기화로 인한 지연이 발생할 수 있습니다.
-                  </div>
+                  <div className="text-3xl font-black text-orange-600">120~300ms</div>
+                  <p className="text-xs text-gray-600 mt-2">
+                    First run may have delay due to container initialization.
+                  </p>
                 </div>
               </div>
 
@@ -1432,11 +1431,11 @@ func main() {
                 <div className="flex items-start gap-3">
                   <i className="ri-information-line text-blue-600 text-xl flex-shrink-0 mt-0.5"></i>
                   <div>
-                    <h4 className="text-sm font-semibold text-blue-900 mb-2">안내사항</h4>
+                    <h4 className="text-sm font-semibold text-blue-900 mb-2">Information</h4>
                     <ul className="text-sm text-blue-800 space-y-1">
-                      <li>• 함수는 정상적으로 작동하며 DynamoDB에 등록되었습니다</li>
-                      <li>• 몇 분 후 자동으로 Warm Pool에 추가될 예정입니다</li>
-                      <li>• 두 번째 실행부터는 0ms Cold Start가 보장됩니다</li>
+                      <li>• Function is working normally and registered in DynamoDB</li>
+                      <li>• Will be added to Warm Pool automatically in a few minutes</li>
+                      <li>• 0ms Cold Start guaranteed from the second run</li>
                     </ul>
                   </div>
                 </div>
@@ -1444,7 +1443,7 @@ func main() {
 
               {/* Function Info */}
               <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 mb-6 border border-gray-200">
-                <div className="text-sm text-gray-600 mb-2">배포된 함수</div>
+                <div className="text-sm text-gray-600 mb-2">Deployed Function</div>
                 <div className="font-semibold text-gray-900">{formData.name}</div>
               </div>
 
@@ -1458,20 +1457,20 @@ func main() {
                   className="w-full px-6 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center justify-center gap-2"
                 >
                   <i className="ri-play-circle-line text-xl"></i>
-                  🐢 실행하기 (Cold Start 예상)
+                  🐢 Run (Cold Start Expected)
                 </button>
                 <button
                   onClick={handleCloseWarning}
                   className="w-full px-6 py-3 bg-white border border-purple-200 text-gray-700 font-semibold rounded-xl hover:bg-purple-50 transition-all whitespace-nowrap cursor-pointer"
                 >
-                  대시보드로 이동
+                  Go to Dashboard
                 </button>
               </div>
 
               {/* Note */}
               <div className="mt-6 pt-6 border-t border-gray-200">
                 <p className="text-sm text-gray-600">
-                  💡 FaaS Warm Pool은 사용 패턴을 학습하여 자동으로 최적화됩니다
+                  💡 FaaS Warm Pool learns usage patterns and optimizes automatically
                 </p>
               </div>
             </div>
@@ -1490,7 +1489,7 @@ func main() {
                   <i className="ri-flask-line text-2xl text-white"></i>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white">함수 테스트</h3>
+                  <h3 className="text-xl font-bold text-white">Function Test</h3>
                   <p className="text-sm text-white/80">{formData.name}</p>
                 </div>
               </div>
@@ -1517,27 +1516,27 @@ func main() {
                     }`}
                 >
                   <i className="ri-code-line mr-2"></i>
-                  입력 데이터
+                  Input Data
                 </button>
                 <button
                   onClick={() => setActiveTestTab('result')}
                   className={`px-4 py-3 font-semibold text-sm transition-all cursor-pointer ${activeTestTab === 'result'
-                    ? 'text-purple-600 border-b-2 border-purple-600 bg-white'
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-white'
                     : 'text-gray-600 hover:text-gray-900'
                     }`}
                 >
                   <i className="ri-terminal-line mr-2"></i>
-                  실행 결과
+                  Execution Result
                 </button>
                 <button
                   onClick={() => setActiveTestTab('analysis')}
                   className={`px-4 py-3 font-semibold text-sm transition-all cursor-pointer ${activeTestTab === 'analysis'
-                    ? 'text-purple-600 border-b-2 border-purple-600 bg-white'
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-white'
                     : 'text-gray-600 hover:text-gray-900'
                     }`}
                 >
                   <i className="ri-bar-chart-line mr-2"></i>
-                  상세 분석
+                  Advanced Analysis
                 </button>
               </div>
             </div>
@@ -1549,12 +1548,12 @@ func main() {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <label className="block text-sm font-semibold text-gray-700">
-                      테스트 입력 데이터 (JSON)
+                      Test Input Data (JSON)
                     </label>
                     <div className="flex items-center gap-3">
                       <span className={`text-xs font-medium ${isAsyncMode ? 'text-purple-600' : 'text-gray-500'}`}>
                         <i className="ri-timer-flash-line mr-1"></i>
-                        비동기 실행 (Async)
+                        Async Execution
                       </span>
                       <button
                         onClick={() => setIsAsyncMode(!isAsyncMode)}
@@ -1578,9 +1577,9 @@ func main() {
                     <div className="flex items-start gap-3">
                       <i className="ri-information-line text-blue-600 text-lg flex-shrink-0 mt-0.5"></i>
                       <div>
-                        <h4 className="text-sm font-semibold text-blue-900 mb-1">입력 형식 안내</h4>
+                        <h4 className="text-sm font-semibold text-blue-900 mb-1">Input Format Guide</h4>
                         <p className="text-sm text-blue-800">
-                          JSON 형식으로 테스트 데이터를 입력하세요. 함수의 event 매개변수로 전달됩니다.
+                          Enter test data in JSON format. It will be passed as the event parameter to the function.
                         </p>
                       </div>
                     </div>
@@ -1594,7 +1593,7 @@ func main() {
                   {testRunning ? (
                     <div className="flex flex-col items-center justify-center py-12">
                       <div className="w-16 h-16 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-4"></div>
-                      <p className="text-gray-600 font-medium">함수 실행 중...</p>
+                      <p className="text-gray-600 font-medium">Executing function...</p>
                     </div>
                   ) : testResult ? (
                     <div className="space-y-4">
@@ -1611,7 +1610,7 @@ func main() {
                           </div>
                           <div>
                             <div className="font-bold text-gray-900">
-                              {testResult.success ? '✅ 실행 성공' : '❌ 실행 실패'}
+                              {testResult.success ? '✅ Execution Successful' : '❌ Execution Failed'}
                             </div>
                             <div className="text-sm text-gray-600">
                               Status Code: {testResult.statusCode}
@@ -1623,11 +1622,11 @@ func main() {
                       {/* Metrics */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-gray-200">
-                          <div className="text-sm text-gray-600 mb-1">응답 시간</div>
-                          <div className="text-2xl font-bold text-purple-600">{testResult.responseTime}ms</div>
+                          <div className="text-sm text-gray-600 mb-1">Response Time</div>
+                          <div className="text-2xl font-bold text-blue-600">{testResult.responseTime}ms</div>
                         </div>
                         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
-                          <div className="text-sm text-gray-600 mb-1">메모리 사용</div>
+                          <div className="text-sm text-gray-600 mb-1">Memory Used</div>
                           <div className="text-2xl font-bold text-blue-600">{testResult.memoryUsed}MB</div>
                         </div>
                       </div>
@@ -1635,7 +1634,7 @@ func main() {
                       {/* Output */}
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          출력 결과
+                          Output Result
                         </label>
                         <div className="bg-gray-900 rounded-xl p-4 font-mono text-sm text-gray-100 overflow-x-auto">
                           <pre>{testResult.output}</pre>
@@ -1645,7 +1644,7 @@ func main() {
                   ) : (
                     <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                       <i className="ri-play-circle-line text-6xl mb-4"></i>
-                      <p>테스트를 실행하려면 아래 버튼을 클릭하세요</p>
+                      <p>Click the button below to run a test</p>
                     </div>
                   )}
                 </div>
@@ -1660,16 +1659,16 @@ func main() {
                       <div className="bg-gradient-to-r from-orange-400 to-red-400 rounded-xl p-6 text-white">
                         <div className="flex items-center gap-3 mb-2">
                           <i className="ri-fire-fill text-3xl"></i>
-                          <h3 className="text-2xl font-bold">Auto-Tuner 분석</h3>
+                          <h3 className="text-2xl font-bold">Auto-Tuner Analysis</h3>
                         </div>
                         <p className="text-white/90">
-                          실행 데이터를 기반으로 최적 설정을 분석합니다
+                          Analyzing optimal settings based on execution data
                         </p>
                       </div>
 
                       {/* Resource Usage */}
                       <div>
-                        <h4 className="text-lg font-bold text-gray-900 mb-4">리소스 사용 패턴</h4>
+                        <h4 className="text-lg font-bold text-gray-900 mb-4">Resource Usage Pattern</h4>
                         <div className="space-y-3">
                           {[
                             { label: 'CPU', value: testResult.metrics.cpu, color: 'purple', icon: 'ri-cpu-line' },
@@ -1700,31 +1699,29 @@ func main() {
                       <div className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl p-6">
                         <h4 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                           <i className="ri-lightbulb-line text-purple-600"></i>
-                          최적화 추천
+                          Optimization Recommendation
                         </h4>
-                        <div className="space-y-3">
-                          <div className="bg-white rounded-lg p-4 border border-gray-200">
-                            <div className="flex items-start gap-3">
-                              <i className="ri-arrow-down-line text-green-600 text-xl flex-shrink-0 mt-0.5"></i>
-                              <div>
-                                <div className="font-semibold text-gray-900 mb-1">메모리 최적화</div>
-                                <div className="text-sm text-gray-600">
-                                  현재 {testResult.memoryUsed}MB 사용 중입니다. 256MB로 줄여도 충분합니다.
-                                </div>
-                                <div className="text-sm font-semibold text-green-600 mt-2">
-                                  예상 비용 절감: 50%
-                                </div>
-                              </div>
+                        <div className="space-y-4">
+                          <div className="flex items-start gap-3 bg-green-50 p-4 rounded-lg border border-green-200">
+                            <i className="ri-lightbulb-flash-line text-green-600 text-xl flex-shrink-0 mt-0.5"></i>
+                            <div>
+                              <div className="font-semibold text-gray-900 mb-1">Memory Optimization</div>
+                              <p className="text-sm text-gray-600">
+                                Currently using {testResult.memoryUsed}MB. 256MB should be sufficient.
+                              </p>
+                              <p className="text-sm font-semibold text-green-600 mt-1">
+                                Expected cost savings: 50%
+                              </p>
                             </div>
                           </div>
                           <div className="bg-white rounded-lg p-4 border border-gray-200">
                             <div className="flex items-start gap-3">
                               <i className="ri-time-line text-blue-600 text-xl flex-shrink-0 mt-0.5"></i>
                               <div>
-                                <div className="font-semibold text-gray-900 mb-1">타임아웃 조정</div>
-                                <div className="text-sm text-gray-600">
-                                  평균 응답 시간이 {testResult.responseTime}ms입니다. 타임아웃을 10초로 줄일 수 있습니다.
-                                </div>
+                                <div className="font-semibold text-gray-900 mb-1">Timeout Adjustment</div>
+                                <p className="text-sm text-gray-600">
+                                  Average response time is {testResult.responseTime}ms. You can reduce timeout to 10 seconds.
+                                </p>
                               </div>
                             </div>
                           </div>
@@ -1736,11 +1733,11 @@ func main() {
                         <div className="flex items-start gap-3">
                           <i className="ri-information-line text-blue-600 text-xl flex-shrink-0 mt-0.5"></i>
                           <div>
-                            <h4 className="text-sm font-semibold text-blue-900 mb-2">인사이트</h4>
+                            <h4 className="text-sm font-semibold text-blue-900 mb-2">Insights</h4>
                             <ul className="text-sm text-blue-800 space-y-1">
-                              <li>• 함수가 효율적으로 실행되고 있습니다</li>
-                              <li>• Warm Pool 활성화로 Cold Start가 제거되었습니다</li>
-                              <li>• 추가 최적화로 최대 85%의 비용을 절감할 수 있습니다</li>
+                              <li>• Function is running efficiently</li>
+                              <li>• Cold Start has been eliminated with Warm Pool activation</li>
+                              <li>• Additional optimization can save up to 85% in costs</li>
                             </ul>
                           </div>
                         </div>
@@ -1749,7 +1746,7 @@ func main() {
                   ) : (
                     <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                       <i className="ri-bar-chart-line text-6xl mb-4"></i>
-                      <p>테스트를 먼저 실행해주세요</p>
+                      <p>Please run a test first</p>
                     </div>
                   )}
                 </div>
@@ -1767,15 +1764,15 @@ func main() {
                   }}
                   className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-all whitespace-nowrap cursor-pointer"
                 >
-                  닫기
+                  Close
                 </button>
                 <button
                   onClick={handleTestRun}
                   disabled={testRunning}
-                  className="px-6 py-3 bg-gradient-to-r from-purple-400 to-pink-400 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <i className="ri-play-line"></i>
-                  {testRunning ? '실행 중...' : '테스트 실행'}
+                  {testRunning ? 'Running...' : 'Run Test'}
                 </button>
               </div>
             </div>

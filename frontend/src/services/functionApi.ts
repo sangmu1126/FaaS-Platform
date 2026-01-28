@@ -58,7 +58,7 @@ export const functionApi = {
 
   // Get dashboard stats
   getDashboardStats: async (): Promise<DashboardStats> => {
-    return apiClient.get<DashboardStats>('/dashboard/stats');
+    return apiClient.get<DashboardStats>(`/dashboard/stats?_t=${Date.now()}`);
   },
 
   // Invoke function

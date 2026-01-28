@@ -203,6 +203,8 @@ export const gatewayController = {
                 startTime = new Date(Date.now() - 60 * 60 * 1000).toISOString();
             } else if (range === '7d') {
                 startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+            } else if (range === '30d') {
+                startTime = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
             }
 
             // 2. Fetch Prometheus Metrics (Global/Cumulative) - Still useful for "Total" context if needed, but we focus on Window

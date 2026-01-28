@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import { functionApi } from '../../services/functionApi';
 import { logApi } from '../../services/logApi';
+import { ConfirmModal } from '../../components/ConfirmModal';
 
 interface FunctionItem {
   id: string;
@@ -33,6 +34,11 @@ export default function DashboardPage() {
   const [functions, setFunctions] = useState<FunctionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; functionId: string; functionName: string }>({
+    isOpen: false,
+    functionId: '',
+    functionName: ''
+  });
 
   // Fetch Real Data
   useEffect(() => {
@@ -81,7 +87,7 @@ export default function DashboardPage() {
         // Transform to frontend format
         const transformed: LogEntry[] = logData.map((log: any) => ({
           id: log.id || Math.random().toString(),
-          time: new Date(log.timestamp).toLocaleTimeString('ko-KR', { hour12: false }),
+          time: new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false }),
           type: log.level === 'WARN' ? 'pool' : log.level === 'INFO' ? 'warm' : 'tuner', // Simple mapping
           message: `${log.message} ${log.ip ? `(${log.ip})` : ''}`,
           icon: log.level === 'WARN' ? '⚠️' : log.level === 'ERROR' ? '❌' : 'ℹ️'
@@ -123,9 +129,9 @@ export default function DashboardPage() {
 
   const getStatusText = (status: string) => {
     const texts: Record<string, string> = {
-      'active': '실행 중',
-      'inactive': '중지됨',
-      'deploying': '배포 중'
+      'active': 'Active',
+      'inactive': 'Inactive',
+      'deploying': 'Deploying'
     };
     return texts[status] || status;
   };
@@ -172,7 +178,7 @@ export default function DashboardPage() {
           const data = await res.json();
           setSystemStatus(data);
           // Always update heartbeat time when data is fetched
-          setLastHeartbeat(new Date().toLocaleTimeString('ko-KR'));
+          setLastHeartbeat(new Date().toLocaleTimeString('en-US'));
         }
       } catch (e) {
         console.error("Failed to fetch system status");
@@ -190,7 +196,7 @@ export default function DashboardPage() {
       if (res.ok) {
         const data = await res.json();
         setSystemStatus(data);
-        setLastHeartbeat(new Date().toLocaleTimeString('ko-KR'));
+        setLastHeartbeat(new Date().toLocaleTimeString('en-US'));
         setShowRawStatus(true);
       }
     } catch (e) {
@@ -216,10 +222,10 @@ export default function DashboardPage() {
                   <div className="w-12 h-12 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl flex items-center justify-center">
                     <i className="ri-function-line text-2xl text-purple-600"></i>
                   </div>
-                  <span className="text-xs text-gray-500">전체</span>
+                  <span className="text-xs text-gray-500">Total</span>
                 </div>
                 <div className="text-3xl font-bold text-gray-900 mb-1">{functions.filter(f => f.status === 'active').length}</div>
-                <div className="text-sm text-gray-600">활성 함수</div>
+                <div className="text-sm text-gray-600">Active Functions</div>
               </div>
 
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-purple-100 shadow-sm">
@@ -235,7 +241,7 @@ export default function DashboardPage() {
                 <div className="text-3xl font-bold text-gray-900 mb-1">
                   {functions.reduce((acc, curr) => acc + curr.invocations, 0).toLocaleString()}
                 </div>
-                <div className="text-sm text-gray-600">총 실행 횟수</div>
+                <div className="text-sm text-gray-600">Total Invocations</div>
               </div>
 
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-blue-100 shadow-sm">
@@ -253,7 +259,7 @@ export default function DashboardPage() {
                     ? Math.round(functions.reduce((acc, curr) => acc + curr.avgDuration, 0) / functions.length)
                     : 0}ms
                 </div>
-                <div className="text-sm text-gray-600">평균 응답 시간</div>
+                <div className="text-sm text-gray-600">Avg Response Time</div>
               </div>
 
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-green-100 shadow-sm">
@@ -263,7 +269,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-1 px-2 py-1 bg-green-50 rounded-full">
                     <span className="text-xs font-bold text-green-700">{costEfficiency.score}</span>
-                    <span className="text-xs text-green-600">점</span>
+                    <span className="text-xs text-green-600">pt</span>
                   </div>
                 </div>
                 <div className="text-3xl font-bold text-gray-900 mb-1">${costEfficiency.optimizedCost.toFixed(2)}</div>
@@ -280,20 +286,20 @@ export default function DashboardPage() {
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-4"></div>
-                  <p className="text-gray-500">함수 목록을 불러오는 중...</p>
+                  <p className="text-gray-500">Loading functions...</p>
                 </div>
               ) : functions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                     <i className="ri-function-line text-3xl text-gray-400"></i>
                   </div>
-                  <h3 className="text-lg font-bold text-gray-900 mb-2">배포된 함수가 없습니다</h3>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">No Functions Deployed</h3>
                   <p className="text-gray-500 mb-6 max-w-sm">
-                    아직 배포된 함수가 없습니다. 새로운 함수를 배포하여 Serverless 환경을 경험해보세요.
+                    You haven't deployed any functions yet. Deploy a new function to experience the Serverless environment.
                   </p>
                   <Link to="/deploy" className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-xl hover:shadow-lg transition-all flex items-center gap-2">
                     <i className="ri-rocket-line"></i>
-                    함수 배포하기
+                    Deploy Function
                   </Link>
                 </div>
               ) : (
@@ -301,12 +307,12 @@ export default function DashboardPage() {
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">함수명</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">상태</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">언어</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">메모리</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">마지막 배포</th>
-                        <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">작업</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Function</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Language</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Memory</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Last Deployed</th>
+                        <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -355,31 +361,28 @@ export default function DashboardPage() {
                                 <Link
                                   to={`/function/${func.id}`}
                                   className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-green-50 text-gray-600 hover:text-green-600 transition-colors cursor-pointer"
-                                  title="실행"
+                                  title="Run"
                                 >
                                   <i className="ri-play-circle-line text-xl"></i>
                                 </Link>
                                 <Link
                                   to={`/function/${func.id}`}
                                   className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-purple-50 text-gray-600 hover:text-purple-600 transition-colors cursor-pointer"
-                                  title="설정"
+                                  title="Settings"
                                 >
                                   <i className="ri-settings-3-line text-xl"></i>
                                 </Link>
                                 <button
-                                  onClick={async (e) => {
+                                  onClick={(e) => {
                                     e.preventDefault();
-                                    if (window.confirm('정말 삭제하시겠습니까?')) {
-                                      try {
-                                        await functionApi.deleteFunction(func.id);
-                                        setFunctions(prev => prev.filter(f => f.id !== func.id));
-                                      } catch (err) {
-                                        alert('삭제 실패');
-                                      }
-                                    }
+                                    setDeleteModal({
+                                      isOpen: true,
+                                      functionId: func.id,
+                                      functionName: func.name
+                                    });
                                   }}
                                   className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-gray-600 hover:text-red-600 transition-colors cursor-pointer"
-                                  title="삭제"
+                                  title="Delete"
                                 >
                                   <i className="ri-delete-bin-line text-xl"></i>
                                 </button>
@@ -407,7 +410,7 @@ export default function DashboardPage() {
                     System Live Log
                   </span>
                 </div>
-                <span className="text-xs text-gray-500">실시간</span>
+                <span className="text-xs text-gray-500">Real-time</span>
               </div>
               <div
                 ref={logContainerRef}
@@ -432,7 +435,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-6">
           <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">시스템 상세 로그</h3>
+              <h3 className="text-lg font-bold text-gray-900">System Log Details</h3>
               <button
                 onClick={() => setShowLogModal(false)}
                 className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
@@ -476,7 +479,7 @@ export default function DashboardPage() {
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50 sticky top-0 bg-white z-10">
               <div className="flex items-center gap-2">
                 <div className={`w-3 h-3 rounded-full ${systemStatus?.status === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                <h3 className="text-lg font-bold text-gray-900">Warm Pool 상세 정보</h3>
+                <h3 className="text-lg font-bold text-gray-900">Warm Pool Details</h3>
               </div>
               <button
                 onClick={() => setShowPoolModal(false)}
@@ -488,7 +491,7 @@ export default function DashboardPage() {
             <div className="p-6">
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                  <div className="text-xs text-gray-500 mb-1">시스템 상태</div>
+                  <div className="text-xs text-gray-500 mb-1">System Status</div>
                   <div className="text-lg font-bold text-gray-900 flex items-center gap-2">
                     {systemStatus?.status === 'online' ? 'Online' : 'Offline'}
                     {systemStatus?.status === 'online' && <i className="ri-check-circle-fill text-green-500"></i>}
@@ -504,7 +507,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">언어별 Warm Container 현황</h4>
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">Warm Containers by Language</h4>
               <div className="space-y-3">
                 {/* Python */}
                 <div className="bg-white border boundary-gray-200 p-4 rounded-xl shadow-sm">
@@ -578,9 +581,9 @@ export default function DashboardPage() {
               <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-100 flex items-start gap-3">
                 <i className="ri-information-fill text-blue-500 mt-0.5"></i>
                 <div className="text-xs text-blue-800">
-                  <p className="font-semibold mb-1">Warm Pool이란?</p>
-                  콜드 스타트를 방지하기 위해 미리 준비된 컨테이너입니다.
-                  Auto-Tuner가 트래픽에 따라 자동으로 풀 크기를 조절하여 비용과 성능을 최적화합니다.
+                  <p className="font-semibold mb-1">What is Warm Pool?</p>
+                  Pre-warmed containers to prevent cold starts.
+                  Auto-Tuner automatically adjusts pool size based on traffic to optimize cost and performance.
                 </div>
               </div>
 
@@ -591,7 +594,7 @@ export default function DashboardPage() {
                   className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-red-100 hover:border-red-200 hover:shadow-md"
                 >
                   <i className="ri-heart-pulse-fill text-xl animate-pulse"></i>
-                  Heartbeat 상태 확인
+                  Check Heartbeat Status
                 </button>
 
                 {showRawStatus && (
@@ -611,6 +614,27 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        title="Delete Function"
+        message={`Are you sure you want to delete "${deleteModal.functionName}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={async () => {
+          try {
+            await functionApi.deleteFunction(deleteModal.functionId);
+            setFunctions(prev => prev.filter(f => f.id !== deleteModal.functionId));
+            setDeleteModal({ isOpen: false, functionId: '', functionName: '' });
+          } catch (err) {
+            alert('Delete failed');
+            setDeleteModal({ isOpen: false, functionId: '', functionName: '' });
+          }
+        }}
+        onCancel={() => setDeleteModal({ isOpen: false, functionId: '', functionName: '' })}
+      />
     </div>
   );
 }
