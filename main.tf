@@ -62,6 +62,21 @@ resource "aws_s3_bucket_public_access_block" "code_bucket_block" {
   restrict_public_buckets = true
 }
 
+# 1.1 S3 Bucket for User Data (Function Outputs/Logs)
+resource "aws_s3_bucket" "user_data_bucket" {
+  bucket_prefix = "${var.project_name}-user-data-"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "user_data_bucket_block" {
+  bucket = aws_s3_bucket.user_data_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 # 2. DynamoDB for Metadata
 resource "aws_dynamodb_table" "metadata_table" {
   name         = "${var.project_name}-table"
@@ -119,6 +134,10 @@ resource "aws_sqs_queue" "dlq_queue" {
 # 4. Outputs (For .env)
 output "s3_bucket_name" {
   value = aws_s3_bucket.code_bucket.bucket
+}
+
+output "s3_user_data_bucket_name" {
+  value = aws_s3_bucket.user_data_bucket.bucket
 }
 
 output "dynamodb_table_name" {

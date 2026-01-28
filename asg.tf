@@ -41,7 +41,10 @@ resource "aws_iam_role_policy" "worker_policy" {
           "s3:GetObject",
           "s3:PutObject"
         ]
-        Resource = "${aws_s3_bucket.code_bucket.arn}/*"
+        Resource = [
+          "${aws_s3_bucket.code_bucket.arn}/*",
+          "${aws_s3_bucket.user_data_bucket.arn}/*"
+        ]
       },
       {
         Effect = "Allow"
@@ -106,6 +109,7 @@ resource "aws_launch_template" "worker" {
     aws_region            = var.aws_region
     sqs_url               = aws_sqs_queue.task_queue.url
     bucket_name           = aws_s3_bucket.code_bucket.bucket
+    user_data_bucket_name = aws_s3_bucket.user_data_bucket.bucket
     table_name            = aws_dynamodb_table.metadata_table.name
     redis_host            = aws_elasticache_cluster.redis.cache_nodes[0].address
     warm_pool_python_size = var.warm_pool_python_size
