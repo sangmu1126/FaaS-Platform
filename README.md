@@ -117,11 +117,12 @@ graph TD
 
 ## 📖 Overview
 
-This project is a **proprietary FaaS (Function as a Service) platform** built from scratch to address common limitations of public cloud FaaS offerings. It decouples the Control Plane (Controller) from the Compute Plane (Worker) to achieve **independent scalability** and **zero-downtime deployments**.
+This project is a **Production-Grade FaaS (Function as a Service) platform** built from scratch to address common limitations of public cloud FaaS offerings. It decouples the Control Plane (Controller) from the Compute Plane (Worker) to achieve **independent scalability** and **zero-downtime deployments**.
 
 **Key Achievements:**
 - **📉 -66% Cost Reduction**: optimized architecture by replacing expensive managed components (NAT GW, ALB) with custom application logic and VPC Endpoints.
 - **⚡ Zero Cold Start**: Implemented a "Heavy Warm Pool" scheduler, reducing function wakeup latency by **95% (sub-100ms)**.
+- **🚀 120,000x Faster Monitoring**: Bypassed Docker API overhead by directly parsing **Linux Cgroups** ([📄 View Benchmark: 15.5µs Avg](./tests/worker/benchmark_simple.py)), reducing metric collection latency to microseconds.
 - **🛡️ Enterprise Reliability**: Features Self-healing Workers, Rate Limiting (Redis Lua), and Autonomic Scaling based on SQS backlogs.
 
 ---
@@ -169,6 +170,10 @@ This project is a **proprietary FaaS (Function as a Service) platform** built fr
 | **Recovery** | Manual/expensive | **ASG Self-Healing + Pre-baked AMI** | **Included** |
 | **Total** | ~$68/mo | **~$23/mo** | **📉 66%** |
 
+> **⚠️ Architectural Trade-offs**
+> * **No Outbound Internet:** By removing NAT Gateway for cost savings, Worker nodes cannot access public APIs directly (Solved via `Proxy Service` for specific whitelisted domains).
+> * **Cold Start vs Cost:** Keeping a "Warm Pool" consumes memory even when idle. We optimized this by using a dynamic pool size based on daily traffic patterns.
+
 ---
 
 ## 🛠 Tech Stack
@@ -193,10 +198,11 @@ This project is a **proprietary FaaS (Function as a Service) platform** built fr
 ## 📊 Performance & Verification
 
 ### 1. Load Testing (K6)
-Validated against 200 concurrent Virtual Users (Simulating DDoS/Traffic Spike).
--   **Throughput**: **1,500+ Req/sec** handled without degradation.
+Validated against **200 concurrent Virtual Users** (Simulating traffic spike) on a single `t3.small` instance.
+-   **Throughput**: **520 Req/sec** verified (Peak throughput).
+-   **Stability**: **241 Req/sec** sustained with 0% error rate.
+-   **Bottleneck**: Test environment CPU contention (Controller + K6 on same node).
 -   **Rate Limiter**: Effectively blocked excess traffic (`429 Too Many Requests`) in `<150ms`.
--   **Latency**: Added overhead is **<10ms** per request thanks to the Warm Pool architecture.
 
 ### 2. Auto Scaling Strategy
 Used **Target Tracking Scaling** based on `BacklogPerInstance` metric.
