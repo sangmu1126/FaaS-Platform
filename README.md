@@ -89,9 +89,12 @@ INFRA_API_KEY=test-api-key
 - **System Status**: Global dashboard for Controller and Worker node status.
 - **Log Expansion**: Expand large log messages for detailed inspection.
 
-### 3. 🤖 AI Integration
-- **Model Selector**: Dynamically select AI models (LLM) per job.
-- **Prompt Engineering**: Test prompts directly within the Web UI.
+### 3. 🎛️ Control & Visualization Layer
+- **Live Stress Testing UI**: Integrated terminal interface to trigger load tests and toggle between 'Capacity' and 'Resiliency' modes.
+- **Dynamic Chart Rendering**: High-performance rendering of real-time metrics (CPU, Memory, Latency) using Recharts.
+- **State Feedback System**: Visual indicators for system states, including 'Warm/Cold' pool status and auto-scaling events.
+
+
 
 ---
 
@@ -102,9 +105,3 @@ Configuration is managed via environment variables, not hardcoding.
 - **Frontend**: Loads variables prefixed with `VITE_` in `src/config.ts`.
 - **Backend**: Uses `dotenv` for configuration management.
 - **Git**: All sensitive `.env` files are in `.gitignore`. Inject variables during deployment.
-
----
-
-<div align="center">
-  <sub>Built with ❤️ by Softbank-Final Team</sub>
-</div>

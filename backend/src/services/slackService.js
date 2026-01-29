@@ -6,6 +6,10 @@ export const slackService = {
     async notifyStart(functionId, input) {
         if (!config.slack.token) return null;
 
+        // Skip for Load Tests
+        const isTest = input === true || (input && (input.test === true || (typeof input === 'string' && input.includes('"test":true'))));
+        if (isTest) return null;
+
         try {
             const message = {
                 channel: config.slack.channelId,
@@ -61,6 +65,12 @@ export const slackService = {
 
     async notifyDeploy(functionId, runtime, filename) {
         if (!config.slack.token) return;
+
+        // Skip for Load Tests (Temporary functions)
+        if (functionId?.includes('loadtest') || filename?.includes('loadtest')) {
+            return;
+        }
+
         try {
             const message = {
                 channel: config.slack.channelId,

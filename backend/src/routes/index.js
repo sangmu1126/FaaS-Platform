@@ -19,6 +19,10 @@ router.get('/dashboard/stats', gatewayController.getDashboardStats);
 // Actions
 router.post('/upload', upload.single('file'), gatewayController.upload);
 router.post('/run', gatewayController.run);
+router.post('/debug/loadtest', gatewayController.startLoadTest);
+router.post('/loadtest/start', gatewayController.startLoadTest);
+router.post('/loadtest/stop', gatewayController.stopLoadTest);
+router.get('/loadtest/status', gatewayController.getLoadTestStatus);
 router.get('/status/:jobId', gatewayController.getJobStatus);
 
 // Logs

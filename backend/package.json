@@ -9,6 +9,7 @@
         "dev": "nodemon --ignore telemetry.json --ignore '*.log' src/server.js"
     },
     "dependencies": {
+        "archiver": "^7.0.1",
         "cors": "^2.8.5",
         "dayjs": "^1.11.10",
         "dotenv": "^16.3.1",

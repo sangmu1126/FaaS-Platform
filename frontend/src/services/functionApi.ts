@@ -73,4 +73,18 @@ export const functionApi = {
   getJobStatus: async (jobId: string): Promise<unknown> => {
     return apiClient.get(`/status/${jobId}`);
   },
+
+  // Load Test Controls
+  startLoadTest: async (options?: { mode?: 'capacity' | 'stress', targetId?: string, duration?: number, concurrency?: number }): Promise<void> => {
+    // This returns a streaming response, handled differently but we send POST
+    return apiClient.post('/loadtest/start', options || {});
+  },
+
+  stopLoadTest: async (): Promise<{ success: boolean; message: string }> => {
+    return apiClient.post('/loadtest/stop');
+  },
+
+  getLoadTestStatus: async (): Promise<{ running: boolean; startedAt: string | null; pid: number | null }> => {
+    return apiClient.get('/loadtest/status');
+  },
 };
