@@ -1,7 +1,15 @@
-import { request } from 'undici';
+import { request, Agent } from 'undici';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import FormData from 'form-data';
+
+// Connection Pool for high-throughput scenarios (prevents EADDRINUSE)
+const agent = new Agent({
+    connections: 100,      // Max connections per origin
+    pipelining: 10,        // Requests pipelined per connection
+    keepAliveTimeout: 30000,
+    keepAliveMaxTimeout: 60000
+});
 
 export const proxyService = {
 
@@ -49,7 +57,8 @@ export const proxyService = {
         const { statusCode, body } = await request(targetUrl, {
             method: 'POST',
             headers,
-            body: formDataBuffer
+            body: formDataBuffer,
+            dispatcher: agent
         });
 
         if (statusCode >= 400) {
@@ -76,7 +85,8 @@ export const proxyService = {
                 },
                 body: JSON.stringify({ functionId, inputData }),
                 bodyTimeout: 60000,  // 60 seconds for function execution
-                headersTimeout: 30000  // 30 seconds to get initial response
+                headersTimeout: 30000,  // 30 seconds to get initial response
+                dispatcher: agent
             });
 
             const result = await body.json();
@@ -102,7 +112,8 @@ export const proxyService = {
     async fetch(path) {
         const targetUrl = `${config.awsAlbUrl}${path}`;
         const { body } = await request(targetUrl, {
-            headers: { 'x-api-key': config.infraApiKey }
+            headers: { 'x-api-key': config.infraApiKey },
+            dispatcher: agent
         });
         try {
             return await body.json();
@@ -115,7 +126,8 @@ export const proxyService = {
     async fetchRaw(path) {
         const targetUrl = `${config.awsAlbUrl}${path}`;
         const { body } = await request(targetUrl, {
-            headers: { 'x-api-key': config.infraApiKey }
+            headers: { 'x-api-key': config.infraApiKey },
+            dispatcher: agent
         });
         return await body.text();
     },
@@ -127,7 +139,8 @@ export const proxyService = {
 
         const { statusCode, body } = await request(targetUrl, {
             method: 'DELETE',
-            headers: { 'x-api-key': config.infraApiKey }
+            headers: { 'x-api-key': config.infraApiKey },
+            dispatcher: agent
         });
 
         if (statusCode >= 400) {
@@ -153,7 +166,8 @@ export const proxyService = {
                 'Content-Type': 'application/json',
                 'x-api-key': config.infraApiKey
             },
-            body: JSON.stringify(updateData)
+            body: JSON.stringify(updateData),
+            dispatcher: agent
         });
 
         if (statusCode >= 400) {
@@ -168,7 +182,8 @@ export const proxyService = {
     async getMetrics(functionId) {
         const targetUrl = `${config.awsAlbUrl}/functions/${functionId}/metrics`;
         const { statusCode, body } = await request(targetUrl, {
-            headers: { 'x-api-key': config.infraApiKey }
+            headers: { 'x-api-key': config.infraApiKey },
+            dispatcher: agent
         });
 
         // If not supported by AWS Controller, return empty metrics

@@ -2,8 +2,188 @@ import { proxyService } from '../services/proxyService.js';
 import { telemetryService } from '../services/telemetryService.js';
 import { slackService } from '../services/slackService.js';
 import { logger } from '../utils/logger.js';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Track active load test process
+let loadTestProcess = null;
+let loadTestStatus = { running: false, startedAt: null, pid: null };
 
 export const gatewayController = {
+
+    // POST /loadtest/start (or /debug/loadtest)
+    async startLoadTest(req, res) {
+        // If already running, reject
+        if (loadTestProcess && loadTestStatus.running) {
+            return res.status(409).json({ error: 'Load test already running', pid: loadTestStatus.pid });
+        }
+
+        const { mode = 'capacity', duration = 10 } = req.body;
+        // Mode-specific VU defaults: Resiliency=10 (stable), Capacity=200 (stress)
+        const defaultConcurrency = mode === 'capacity' ? 200 : 5;
+        const concurrency = req.body.concurrency || defaultConcurrency;
+        logger.info(`Starting Load Test (${mode} mode)...`);
+
+        // Helper: Stream Output
+        if (!res.headersSent) {
+            res.setHeader('Content-Type', 'text/plain');
+            res.setHeader('Transfer-Encoding', 'chunked');
+        }
+        const stream = (msg) => res.write(msg + '\n');
+
+        let targetFunctionId = null;
+        let isTempFunction = true; // Always auto-deploy now
+
+        try {
+            // 1. Select Function Source
+            const functionFile = mode === 'capacity'
+                ? 'hello_world.py'
+                : 'cpu_stress.py';
+            const functionName = `loadtest-${mode}-${Date.now()}`;
+
+            stream(`⚡ Mode: ${mode === 'capacity' ? 'Capacity Planning' : 'Resiliency Testing'}`);
+
+            if (mode === 'capacity') {
+                stream('ℹ️  Target: System Ingress & Throughput');
+                stream('ℹ️  Logic: Auto-deploys a lightweight function (Hello World) to flood the Gateway.');
+                stream('ℹ️  Goal: Verify maximum request acceptance rate (RPS) of the architecture.');
+            } else {
+                stream('ℹ️  Target: Worker Stability & Scaling');
+                stream('ℹ️  Logic: Auto-deploys a CPU-intensive function (Factorial) to stress Worker nodes.');
+                stream('ℹ️  Goal: Verify resource isolation, timeouts, and error handling under load.');
+            }
+
+            stream(`📦 Deploying temporary function: ${functionName}`);
+
+            // 2. Create ZIP from function file
+            const fs = await import('fs');
+            const archiver = (await import('archiver')).default;
+            const os = await import('os');
+
+            const sourceFile = path.join(__dirname, `../../scripts/loadtest_functions/${functionFile}`);
+            const zipPath = path.join(os.tmpdir(), `${functionName}.zip`);
+
+            // Create zip
+            await new Promise((resolve, reject) => {
+                const output = fs.createWriteStream(zipPath);
+                const archive = archiver('zip', { zlib: { level: 9 } });
+
+                output.on('close', resolve);
+                archive.on('error', reject);
+
+                archive.pipe(output);
+                archive.file(sourceFile, { name: 'main.py' });
+                archive.finalize();
+            });
+
+            stream('✅ ZIP created');
+
+            // 3. Deploy using proxyService
+            const zipBuffer = fs.readFileSync(zipPath);
+            const mockFile = {
+                buffer: zipBuffer,
+                originalname: `${functionName}.zip`,
+                mimetype: 'application/zip'
+            };
+
+            const deployResult = await proxyService.uploadFunction(mockFile, 'python', null, '128', functionName, '{}');
+            targetFunctionId = deployResult.functionId;
+
+            stream(`✅ Deployed: ${targetFunctionId}`);
+
+            // Cleanup temp zip
+            fs.unlinkSync(zipPath);
+
+            // 4. Wait for function to be ready
+            stream('⏳ Waiting for function to be ready...');
+            await new Promise(r => setTimeout(r, 2000));
+
+            // 5. Run stress test
+            stream('🚀 Starting load test...');
+            const scriptPath = path.join(__dirname, '../../scripts/stress_test.js');
+            const env = {
+                ...process.env,
+                INFRA_API_KEY: process.env.INFRA_API_KEY || 'test-api-key',
+                LOAD_TEST_MODE: mode,
+                TARGET_FUNCTION_ID: targetFunctionId,
+                LOAD_TEST_DURATION: duration.toString(),
+                LOAD_TEST_CONCURRENCY: concurrency.toString()
+            };
+
+            // Determine Target (Always use Controller directly for load tests)
+            let loadTestHost = 'localhost';
+            let loadTestPort = '8080';
+
+            if (process.env.AWS_ALB_URL) {
+                try {
+                    const url = new URL(process.env.AWS_ALB_URL);
+                    loadTestHost = url.hostname;
+                    loadTestPort = url.port || (url.protocol === 'https:' ? '443' : '80');
+                    if (mode === 'capacity') {
+                        stream(`ℹ️  Targeting Controller directly: ${loadTestHost}:${loadTestPort} (Bypassing Gateway)`);
+                    } else {
+                        stream(`ℹ️  Targeting Controller: ${loadTestHost}:${loadTestPort} (Full Stack via SQS)`);
+                    }
+                } catch (e) {
+                    stream(`⚠️  Could not parse AWS_ALB_URL, falling back to localhost: ${e.message}`);
+                }
+            } else {
+                stream(`ℹ️  Targeting localhost:8080 (AWS_ALB_URL not set)`);
+            }
+
+            const child = spawn('node', [scriptPath], {
+                env: {
+                    ...env,
+                    LOAD_TEST_TARGET_HOST: loadTestHost,
+                    LOAD_TEST_TARGET_PORT: loadTestPort
+                }
+            });
+            loadTestProcess = child;
+            loadTestStatus = { running: true, startedAt: new Date().toISOString(), pid: child.pid, mode };
+
+            child.stdout.on('data', (data) => res.write(data));
+            child.stderr.on('data', (data) => res.write(data));
+
+            child.on('close', async (code) => {
+                loadTestProcess = null;
+                loadTestStatus = { running: false, startedAt: null, pid: null, lastExitCode: code };
+                stream(`\n🏁 Test finished with code ${code}`);
+
+                // 6. Cleanup: Function kept for metrics visibility (User can delete manually)
+                stream('\n✨ Test complete. Function metadata preserved for dashboard visibility.');
+                res.end();
+            });
+
+        } catch (error) {
+            stream(`❌ Error: ${error.message}`);
+            // Attempt cleanup on error
+            if (targetFunctionId) {
+                try {
+                    await proxyService.deleteFunction(targetFunctionId);
+                } catch (e) { /* ignore */ }
+            }
+            res.end();
+        }
+    },
+
+    // POST /loadtest/stop
+    stopLoadTest(req, res) {
+        if (!loadTestProcess || !loadTestStatus.running) {
+            return res.status(404).json({ error: 'No load test is currently running' });
+        }
+
+        logger.info(`Stopping Load Test (PID: ${loadTestStatus.pid})`);
+        loadTestProcess.kill('SIGTERM');
+        res.json({ success: true, message: 'Load test stopped', pid: loadTestStatus.pid });
+    },
+
+    // GET /loadtest/status
+    getLoadTestStatus(req, res) {
+        res.json(loadTestStatus);
+    },
 
     // GET /functions
     async listFunctions(req, res) {
@@ -94,8 +274,24 @@ export const gatewayController = {
         if (!functionId) return res.status(400).json({ error: 'functionId required' });
 
         try {
-            // 1. Notify Start
-            const threadTs = await slackService.notifyStart(functionId, inputData);
+            // Robust test flag detection (handles objects and stringified JSON)
+            let isTest = false;
+            if (inputData) {
+                if (typeof inputData === 'object' && inputData.test === true) {
+                    isTest = true;
+                } else if (typeof inputData === 'string') {
+                    try {
+                        const parsed = JSON.parse(inputData);
+                        if (parsed.test === true) isTest = true;
+                    } catch (e) { /* not JSON */ }
+                }
+            }
+
+            // 1. Notify Start (Skip for Load Tests)
+            let threadTs = null;
+            if (!isTest) {
+                threadTs = await slackService.notifyStart(functionId, inputData);
+            }
 
             // 2. Record Run
             await telemetryService.recordRun(functionId);
@@ -114,8 +310,10 @@ export const gatewayController = {
             const isSuccess = !result.error && result.status !== 'ERROR';
             await telemetryService.recordResult(functionId, isSuccess);
 
-            // Async notification
-            slackService.notifyResult(threadTs, result);
+            // Async notification (Skip for Load Tests)
+            if (threadTs && !isTest) {
+                slackService.notifyResult(threadTs, result);
+            }
 
             res.json(result);
         } catch (error) {
@@ -170,7 +368,22 @@ export const gatewayController = {
     // DELETE /functions/:id
     async deleteFunction(req, res) {
         try {
-            const result = await proxyService.deleteFunction(req.params.id);
+            const functionId = req.params.id;
+
+            // 1. Delete from AWS (Handle "already deleted" 404 gracefully)
+            let result = { success: true, message: 'Deleted' };
+            try {
+                result = await proxyService.deleteFunction(functionId);
+            } catch (awsError) {
+                if (!awsError.message.includes('404')) {
+                    throw awsError; // Re-throw real errors
+                }
+                logger.info(`Function ${functionId} already deleted from AWS.`);
+            }
+
+            // 2. Delete from Local Telemetry (Always cleanup)
+            await telemetryService.delete(functionId);
+
             res.json(result);
         } catch (error) {
             logger.error('Delete Function Error', error);
