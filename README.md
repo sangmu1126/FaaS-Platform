@@ -19,7 +19,7 @@ graph TD
     AINode[AI Node / Ollama]:::ai
     
     %% ☁️ AWS VPC Boundary
-    subgraph "AWS VPC (Zero NAT Architecture)"
+    subgraph "AWS VPC"
         direction TB
         
         %% 1. Shared Managed Services
@@ -32,7 +32,7 @@ graph TD
         end
         
         %% 2. Monitoring Stack
-        subgraph "Observability Stack"
+        subgraph "Observability"
             direction TB
             Prom[Prometheus]:::monitor
             CW[CloudWatch]:::monitor
@@ -52,26 +52,27 @@ graph TD
             Space1 ~~~ Controller
             Controller --> Auth
             Auth -->|x-api-key Valid| RateLimit
-            RateLimit -->|Token Bucket| Redis_Global
+            RateLimit -->|Token Bucket Check| Redis_Global
         end
 
         %% 4. Compute Plane
-        subgraph "Private Subnet<br>(Worker Plane - Isolated)"
+        subgraph "Private Subnet<br>(Compute Plane)"
             direction TB
             Space2[ ]:::empty
             
             Agent[Worker Agent]:::worker
             
             %% Worker Internals
-            subgraph "Worker Instance<br>(t3.micro / Spot)"
+            subgraph "Worker Instance<br>(EC2)"
                 direction TB
                 Space3[ ]:::empty
                 
                 WarmPool[Warm Pool]:::worker
                 Container[User Container]:::worker
-                MetricCol[Metric Collector<br>(Cgroup v2)]:::worker
+                %% 🔥 고친 부분: Metric Collector 추가 및 오타 수정
+                MetricCollector[Metric Collector<br>(Cgroup v2)]:::worker
                 
-                Space3 ~~~ Agent
+                Space3 ~~~ WarmPool
             end
             
             Space2 ~~~ Agent
@@ -85,32 +86,30 @@ graph TD
     Auth --> RateLimit
     RateLimit -->|Check| Redis_Global
     
-    %% Job Dispatch (Ingress 500x)
-    RateLimit -->|Async Dispatch| SQS
+    %% Job Dispatch
+    RateLimit -->|Allowed| SQS
     Controller -->|Upload Code| S3
     
     %% Worker Execution
-    Agent -->|1. Long Polling| SQS
-    Agent -->|2. Acquire O(1)| WarmPool
+    Agent -->|1. Pop| SQS
+    Agent -->|2. Get| WarmPool
     Agent -->|Download| S3
-    WarmPool -->|3. Security Pipe<br>(docker cp)| Container
+    WarmPool -->|3. Run| Container
     Container -->|Inference| AINode
     
-    %% Observability Flow (120,000x Speedup)
-    MetricCol -->|Direct Read| Agent
-    Container -.->|Resource Usage| MetricCol
-    
-    %% Monitoring & Logging
+    %% Monitoring Flow (Updated)
+    Container -.->|Usage Stats| MetricCollector
+    MetricCollector -.->|Direct Parse| Agent
     Agent -.->|Metrics| Prom
-    Agent -.->|Logs (Snapshot)| CW
+    Agent -.->|Logs| CW
     Controller -.->|Metrics| Prom
     
     %% Reporting
-    Agent -->|Exec Logs| DDB
+    Agent -->|Logs| DDB
     Agent -->|Heartbeat| Controller
     Container -->|Result| Redis_Global
     Redis_Global -->|Sub| Controller
-    Controller -->|SSE Response| User
+    Controller -->|Response| User
 ```
 
 ---
