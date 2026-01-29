@@ -69,8 +69,7 @@ graph TD
                 
                 WarmPool[Warm Pool]:::worker
                 Container[User Container]:::worker
-                %% 🔥 고친 부분: Metric Collector 추가 및 오타 수정
-                MetricCollector[Metric Collector<br>(Cgroup v2)]:::worker
+                MetricCollector["Metric Collector<br>(Cgroup v2)"]:::worker
                 
                 Space3 ~~~ WarmPool
             end
