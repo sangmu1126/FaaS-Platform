@@ -22,3 +22,10 @@ mkdir -p /workspace
 chown -R ec2-user:ec2-user /workspace
 
 echo "[INFO] Worker Setup Complete!"
+
+# 6. Cleanup Cloud-Init (CRITICAL for Pre-baked AMI)
+# This allows User Data to run again on new instances launched from this AMI
+echo "[INFO] Cleaning up cloud-init state..."
+rm -rf /var/lib/cloud/*
+rm -rf /var/log/cloud-init*
+
