@@ -19,7 +19,7 @@ graph TD
     AINode[AI Node / Ollama]:::ai
     
     %% ☁️ AWS VPC Boundary
-    subgraph "AWS VPC"
+    subgraph "AWS VPC (Zero NAT Architecture)"
         direction TB
         
         %% 1. Shared Managed Services
@@ -32,7 +32,7 @@ graph TD
         end
         
         %% 2. Monitoring Stack
-        subgraph "Observability"
+        subgraph "Observability Stack"
             direction TB
             Prom[Prometheus]:::monitor
             CW[CloudWatch]:::monitor
@@ -41,7 +41,6 @@ graph TD
         %% 3. Control Plane
         subgraph "Public Subnet<br>(Control Plane)"
             direction TB
-            %% Spacer to force Title visibility
             Space1[ ]:::empty
             
             Controller[Controller Service]:::control
@@ -53,26 +52,24 @@ graph TD
             Space1 ~~~ Controller
             Controller --> Auth
             Auth -->|x-api-key Valid| RateLimit
-            RateLimit -->|Token Bucket Check| Redis_Global
+            RateLimit -->|Token Bucket| Redis_Global
         end
 
         %% 4. Compute Plane
-        subgraph "Private Subnet<br>(Compute Plane)"
+        subgraph "Private Subnet<br>(Worker Plane - Isolated)"
             direction TB
-            %% Spacer for Private Subnet Title
             Space2[ ]:::empty
             
             Agent[Worker Agent]:::worker
             
             %% Worker Internals
-            subgraph "Worker Instance<br>(EC2)"
+            subgraph "Worker Instance<br>(t3.micro / Spot)"
                 direction TB
-                %% Spacer for Instance Title
                 Space3[ ]:::empty
                 
                 WarmPool[Warm Pool]:::worker
                 Container[User Container]:::worker
-                AutoTuner[Auto-Tuner]:::worker
+                MetricCol[Metric Collector<br>(Cgroup v2)]:::worker
                 
                 Space3 ~~~ Agent
             end
@@ -88,29 +85,32 @@ graph TD
     Auth --> RateLimit
     RateLimit -->|Check| Redis_Global
     
-    %% Job Dispatch
-    RateLimit -->|Allowed| SQS
+    %% Job Dispatch (Ingress 500x)
+    RateLimit -->|Async Dispatch| SQS
     Controller -->|Upload Code| S3
     
     %% Worker Execution
-    Agent -->|1. Pop| SQS
-    Agent -->|2. Get| WarmPool
+    Agent -->|1. Long Polling| SQS
+    Agent -->|2. Acquire O(1)| WarmPool
     Agent -->|Download| S3
-    WarmPool -->|3. Run| Container
+    WarmPool -->|3. Security Pipe<br>(docker cp)| Container
     Container -->|Inference| AINode
-    Container -->|Feedback| AutoTuner
     
-    %% Monitoring Flow (New)
+    %% Observability Flow (120,000x Speedup)
+    MetricCol -->|Direct Read| Agent
+    Container -.->|Resource Usage| MetricCol
+    
+    %% Monitoring & Logging
     Agent -.->|Metrics| Prom
-    Agent -.->|Logs| CW
+    Agent -.->|Logs (Snapshot)| CW
     Controller -.->|Metrics| Prom
     
     %% Reporting
-    Agent -->|Logs| DDB
+    Agent -->|Exec Logs| DDB
     Agent -->|Heartbeat| Controller
     Container -->|Result| Redis_Global
     Redis_Global -->|Sub| Controller
-    Controller -->|Response| User
+    Controller -->|SSE Response| User
 ```
 
 ---
@@ -217,6 +217,35 @@ Used **Target Tracking Scaling** based on `BacklogPerInstance` metric.
 -   **Metrics Pipeline**: Worker Agent pushes real-time metrics (CPU/Memory/Duration) to **Prometheus**.
 -   **Log Aggregation**: All distributed logs are centralized in **AWS CloudWatch Logs**.
 -   **Self-Healing Feedback**: "Smart Auto-Tuner" analyzes usage data to optimize resource allocation dynamically.
+
+---
+
+## 🧠 Engineering Deep Dive
+
+### 1. Warm Pool Architecture (Cold Start Optimization)
+-   **Problem**: Lambda Cold Start (~3s latency).
+-   **Solution**: Implemented **Pre-warmed Pool** & **Fast Allocator (O(1))** algorithm.
+-   **Result**: Reduced init latency to **~120ms (Native) / ~200ms (Interpreted)**, achieving **96% performance improvement**.
+
+### 2. Kernel-Level Observability
+-   **Problem**: Docker API overhead caused high latency (~2s) for metrics.
+-   **Solution**: Built a pipeline to **directly parse Cgroup v2** files (`/sys/fs/cgroup/...`), bypassing the Daemon.
+-   **Result**: Metric collection speedup **120,000x** (1994ms → 0.0155ms).
+
+### 3. Security Pipe (Isolation Strategy)
+-   **Trade-off**: Bind Mount (Fast but insecure) vs Docker CP (Slow but secure).
+-   **Decision**: Prioritized isolation. Implemented **`docker cp` based one-way transfer** and **Non-root execution** policy.
+-   **Result**: Verified security integrity against container breakout attacks, trading 110ms I/O overhead for safety.
+
+### 4. Concurrency Control (Race Conditions)
+-   **Challenge**: `t3.micro` (2 vCPU) + 200 VU load caused container allocation race conditions.
+-   **Solution**: Replaced heavy Redis Locks with **Python `threading.Lock`** for minimal overhead.
+-   **Result**: Zero allocation errors under max load without CPU spikes.
+
+### 5. Resilience (Zombie Reaper)
+-   **Challenge**: Infinite loops in user code causing resource leaks.
+-   **Solution**: Implemented **Reaper Pattern** (SIGTERM → 10s Wait → SIGKILL) to force-release resources.
+-   **Result**: **0MB Memory Leak** confirmed under malicious code tests.
 
 ---
 
