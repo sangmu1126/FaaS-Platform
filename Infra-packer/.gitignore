@@ -6,3 +6,8 @@ packer_cache/
 # System
 .DS_Store
 Thumbs.db
+
+# Binaries (Local Download)
+packer.exe
+packer.zip
+
