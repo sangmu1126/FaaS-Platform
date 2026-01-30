@@ -15,7 +15,7 @@ export const proxyService = {
 
     // Smart Upload with Runtime Optimization
     async uploadFunction(file, runtime, functionId, memoryMb, functionName, envVars) {
-        const targetUrl = `${config.awsAlbUrl}/upload`;
+        const targetUrl = `${config.awsControllerUrl}/upload`;
 
         // 1. Runtime Optimization Logic
         let contentType = 'application/octet-stream';
@@ -71,7 +71,7 @@ export const proxyService = {
 
     // Proxy Execution
     async runFunction(functionId, inputData, options = {}) {
-        const targetUrl = `${config.awsAlbUrl}/run`;
+        const targetUrl = `${config.awsControllerUrl}/run`;
 
         logger.info(`Proxying RUN to ${targetUrl}`, { functionId, headers: options.headers });
 
@@ -110,7 +110,7 @@ export const proxyService = {
 
     // Generic Proxy (GET)
     async fetch(path) {
-        const targetUrl = `${config.awsAlbUrl}${path}`;
+        const targetUrl = `${config.awsControllerUrl}${path}`;
         const { body } = await request(targetUrl, {
             headers: { 'x-api-key': config.infraApiKey },
             dispatcher: agent
@@ -124,7 +124,7 @@ export const proxyService = {
 
     // Fetch Raw Text (for Prometheus metrics)
     async fetchRaw(path) {
-        const targetUrl = `${config.awsAlbUrl}${path}`;
+        const targetUrl = `${config.awsControllerUrl}${path}`;
         const { body } = await request(targetUrl, {
             headers: { 'x-api-key': config.infraApiKey },
             dispatcher: agent
@@ -134,7 +134,7 @@ export const proxyService = {
 
     // DELETE Function
     async deleteFunction(functionId) {
-        const targetUrl = `${config.awsAlbUrl}/functions/${functionId}`;
+        const targetUrl = `${config.awsControllerUrl}/functions/${functionId}`;
         logger.info(`Proxying DELETE to ${targetUrl}`);
 
         const { statusCode, body } = await request(targetUrl, {
@@ -157,7 +157,7 @@ export const proxyService = {
 
     // UPDATE Function (PUT)
     async updateFunction(functionId, updateData) {
-        const targetUrl = `${config.awsAlbUrl}/functions/${functionId}`;
+        const targetUrl = `${config.awsControllerUrl}/functions/${functionId}`;
         logger.info(`Proxying PUT to ${targetUrl}`, updateData);
 
         const { statusCode, body } = await request(targetUrl, {
@@ -180,7 +180,7 @@ export const proxyService = {
 
     // GET Metrics for a function
     async getMetrics(functionId) {
-        const targetUrl = `${config.awsAlbUrl}/functions/${functionId}/metrics`;
+        const targetUrl = `${config.awsControllerUrl}/functions/${functionId}/metrics`;
         const { statusCode, body } = await request(targetUrl, {
             headers: { 'x-api-key': config.infraApiKey },
             dispatcher: agent
