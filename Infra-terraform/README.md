@@ -31,7 +31,7 @@ The infrastructure mimics a production-grade environment with strict network iso
 ```mermaid
 graph TD
     User((User/CLI)) -->|HTTP/8080| EIP[Elastic IP]
-    EIP --> ALB[Load Balancer / Controller]
+    EIP --> Controller[⚡ Controller Node]
     
     subgraph "VPC (10.0.0.0/16)"
         subgraph "Public Subnet (10.0.1.x)"

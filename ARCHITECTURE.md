@@ -6,7 +6,7 @@ This project adopts an **Event-Driven Microservices Architecture**, decoupling t
 ### Core Microservices
 1.  **Gateway & Controller Service** (Node.js)
     *   **Role**: API Entry point, Authentication, Traffic Management (Rate Limiting).
-    *   **Scaling**: Horizontally scalable behind ALB (Application Load Balancer).
+    *   **Scaling**: Horizontally scalable (Direct Access via Elastic IP).
 2.  **Worker Service** (Python)
     *   **Role**: Pure Compute Unit. Executes user code in isolated environments.
     *   **Scaling**: Event-Driven Auto Scaling (SQS Backlog).
@@ -14,8 +14,8 @@ This project adopts an **Event-Driven Microservices Architecture**, decoupling t
 ### Architecture Diagram
 ```mermaid
 graph LR
-    User[User/Client] -- HTTP --> ALB(Load Balancer)
-    ALB -- Route --> Controller["Controller Service (Node.js)"]
+    User[User/Client] -- HTTP --> EIP(Elastic IP)
+    EIP -- Route --> Controller["Controller Service (Node.js)"]
     
     subgraph Control Plane
     Controller -- Push Job --> SQS(AWS SQS Queue)

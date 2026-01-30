@@ -71,7 +71,7 @@ npm run dev
 ```ini
 # backend/.env
 PORT=3000
-AWS_ALB_URL=http://<YOUR_CONTROLLER_IP>:8080
+AWS_CONTROLLER_URL=http://<YOUR_CONTROLLER_IP>:8080
 INFRA_API_KEY=test-api-key
 ```
 

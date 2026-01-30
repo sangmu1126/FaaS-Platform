@@ -15,7 +15,7 @@ graph TD
     classDef empty width:0px,height:0px,stroke:none,fill:none,color:none
 
     %% 🌐 External World
-    User[User / Client]:::client -->|HTTPS POST /run| ALB(ALB / Elastic IP):::aws
+    User[User / Client]:::client -->|HTTPS POST /run| EIP(Elastic IP):::aws
     AINode[AI Node / Ollama]:::ai
     
     %% ☁️ AWS VPC Boundary
@@ -80,7 +80,7 @@ graph TD
     
     %% Connections (Logic Flow)
     %% Inbound
-    ALB -- Port 8080 --> Controller
+    EIP -- Port 8080 --> Controller
     Controller --> Auth
     Auth --> RateLimit
     RateLimit -->|Check| Redis_Global
