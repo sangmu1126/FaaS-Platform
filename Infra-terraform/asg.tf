@@ -70,6 +70,16 @@ resource "aws_iam_instance_profile" "worker_profile" {
   role = aws_iam_role.worker_role.name
 }
 
+# Attach SSM Policy for Session Manager Access (No SSH Key needed)
+data "aws_iam_policy" "ssm_core" {
+  arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy_attachment" "worker_ssm_attach" {
+  role       = aws_iam_role.worker_role.name
+  policy_arn = data.aws_iam_policy.ssm_core.arn
+}
+
 # 2. Launch Template for Workers
 # 2. Launch Template for Worker
 
