@@ -52,35 +52,27 @@ export default function DeployPage() {
   const memoryOptions = [128, 256, 512, 1024, 2048, 4096];
 
   const codeTemplates: Record<string, string> = {
-    python: `def handler(event, context):
-    """
-    FaaS Function Handler
-    
-    Args:
-        event: Input event data
-        context: Execution context
-    
-    Returns:
-        Response data
-    """
-    return {
-        'statusCode': 200,
-        'body': 'Hello from FaaS!'
-    }
-
-if __name__ == "__main__":
-    import json
-    import os
-    
-    # Simulate execution
-    event = {}
-    if os.environ.get("PAYLOAD"):
-        try:
-            event = json.loads(os.environ.get("PAYLOAD"))
-        except:
-            pass
-            
-    print(json.dumps(handler(event, {})))`,
+    python: `import sdk
+ 
+ def handler(event, context):
+     """
+     FaaS Function Handler
+     
+     Args:
+         event: Input event data (JSON parsed)
+         context: Execution context (Request ID, etc.)
+     
+     Returns:
+         Response data (JSON serializable)
+     """
+     name = event.get("name", "World")
+     return {
+         'statusCode': 200,
+         'body': f'Hello {name} from FaaS!'
+     }
+ 
+ # Note: Platform handles execution logic automatically.
+ # You don't need "if __name__ == '__main__':" anymore.`,
     nodejs: `exports.handler = async (event, context) => {
     /**
      * FaaS Function Handler
