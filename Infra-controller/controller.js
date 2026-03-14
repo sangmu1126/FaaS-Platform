@@ -238,24 +238,58 @@ const authenticate = (req, res, next) => {
     next();
 };
 
-// Rate Limiting (Lua)
+// Rate Limiting (Token Bucket - Lua)
 const RATE_LIMIT_SCRIPT = `
-    local current = redis.call("INCR", KEYS[1])
-    if current == 1 then redis.call("EXPIRE", KEYS[1], ARGV[1]) end
-    return current
+    local key = KEYS[1]
+    local capacity = tonumber(ARGV[1])
+    local refill_rate = tonumber(ARGV[2])
+    local now = tonumber(ARGV[3])
+    
+    local last_tokens = tonumber(redis.call("HGET", key, "tokens"))
+    if last_tokens == nil then last_tokens = capacity end
+    
+    local last_refreshed = tonumber(redis.call("HGET", key, "last_refreshed"))
+    if last_refreshed == nil then last_refreshed = now end
+    
+    local delta = math.max(0, now - last_refreshed)
+    local filled_tokens = math.min(capacity, last_tokens + (delta * refill_rate))
+    
+    local allowed = 0
+    local new_tokens = filled_tokens
+    
+    if filled_tokens >= 1 then
+        allowed = 1
+        new_tokens = filled_tokens - 1
+    end
+    
+    redis.call("HMSET", key, "tokens", new_tokens, "last_refreshed", now)
+    redis.call("EXPIRE", key, math.ceil(capacity / refill_rate))
+    
+    return { allowed, math.floor(new_tokens) }
 `;
-
 
 const rateLimiter = async (req, res, next) => {
     try {
-        const ip = req.ip || req.connection.remoteAddress;
-        const key = `ratelimit:${ip}`;
-        const current = await redis.eval(RATE_LIMIT_SCRIPT, 1, key, 60);
+        // Use API Key as primary identifier to prevent single abusive IP from blocking all users behind NAT
+        const identifier = req.headers['x-api-key'] || req.ip || req.connection.remoteAddress;
+        const key = `ratelimit:${identifier}`;
+        
+        const now = Math.floor(Date.now() / 1000);
+        const refillRate = Math.max(1, Math.floor(RATE_LIMIT_MAX / 60)); // Tokens per second (e.g. 50)
+        
+        const [allowed, remaining] = await redis.eval(RATE_LIMIT_SCRIPT, 1, key, RATE_LIMIT_MAX, refillRate, now);
+        
         res.set('X-RateLimit-Limit', RATE_LIMIT_MAX);
-        res.set('X-RateLimit-Remaining', Math.max(0, RATE_LIMIT_MAX - current));
-        if (current > RATE_LIMIT_MAX) return res.status(429).json({ error: "Too Many Requests" });
+        res.set('X-RateLimit-Remaining', remaining);
+        
+        if (allowed === 0) {
+            return res.status(429).json({ error: "Too Many Requests (Token Bucket Exhausted)" });
+        }
         next();
-    } catch (error) { next(); }
+    } catch (error) { 
+        logger.error("Rate Limiter Error", error);
+        next(); 
+    }
 };
 
 // Prometheus Metrics
