@@ -52,7 +52,7 @@ graph TD
             Space1 ~~~ Controller
             Controller --> Auth
             Auth -->|x-api-key Valid| RateLimit
-            RateLimit -->|Fixed Window Check| Redis_Global
+            RateLimit -->|Token Bucket Check| Redis_Global
         end
 
         %% 4. Compute Plane
@@ -92,8 +92,9 @@ graph TD
     %% Worker Execution
     Agent -->|1. Pop| SQS
     Agent -->|2. Get| WarmPool
-    Agent -->|Download| S3
-    WarmPool -->|3. Run| Container
+    Agent -->|3. Download| S3
+    Agent -->|4. Inject & Run| Container
+    Agent -->|Upload Output| S3
     Container -->|Inference| AINode
     
     %% Monitoring Flow (Updated)
@@ -148,7 +149,7 @@ This project is a **Production-Grade FaaS (Function as a Service) platform** bui
     - Acts as the **API Gateway** & **Control Plane**.
     - Handles Authentication, Traffic Management, and Job Dispatching.
     - **Scalability**: Auto Scaling Group (min=1) with **Elastic IP Self-Healing**.
-    - **Security**: Rate Limiting via Redis (Fixed Window Counter) & Trusted Proxy configuration.
+    - **Security**: Rate Limiting via Redis (Token Bucket Algorithm) & Trusted Proxy configuration.
 
 2.  **Worker Service (Python/Docker)**
     - The **Compute Plane** executing user code in isolated Docker environments.
