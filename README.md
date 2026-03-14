@@ -52,7 +52,7 @@ graph TD
             Space1 ~~~ Controller
             Controller --> Auth
             Auth -->|x-api-key Valid| RateLimit
-            RateLimit -->|Token Bucket Check| Redis_Global
+            RateLimit -->|Fixed Window Check| Redis_Global
         end
 
         %% 4. Compute Plane
@@ -100,14 +100,14 @@ graph TD
     Container -.->|Usage Stats| MetricCollector
     MetricCollector -.->|Direct Parse| Agent
     Agent -.->|Metrics| Prom
-    Agent -.->|Logs| CW
+    Agent -.->|Peak Memory| CW
     Controller -.->|Metrics| Prom
     
     %% Reporting
-    Agent -->|Logs| DDB
+    Controller -->|Logs| DDB
     Agent -->|Heartbeat| Controller
-    Container -->|Result| Redis_Global
-    Redis_Global -->|Sub| Controller
+    Agent -->|Pub Result| Redis_Global
+    Redis_Global -->|Sub Result| Controller
     Controller -->|Response| User
 ```
 
@@ -148,7 +148,7 @@ This project is a **Production-Grade FaaS (Function as a Service) platform** bui
     - Acts as the **API Gateway** & **Control Plane**.
     - Handles Authentication, Traffic Management, and Job Dispatching.
     - **Scalability**: Auto Scaling Group (min=1) with **Elastic IP Self-Healing**.
-    - **Security**: Rate Limiting via Redis (Token Bucket) & Trusted Proxy configuration.
+    - **Security**: Rate Limiting via Redis (Fixed Window Counter) & Trusted Proxy configuration.
 
 2.  **Worker Service (Python/Docker)**
     - The **Compute Plane** executing user code in isolated Docker environments.
