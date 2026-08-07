@@ -32,8 +32,7 @@ resource "aws_launch_template" "controller" {
     table_name      = aws_dynamodb_table.metadata_table.name
     logs_table_name = aws_dynamodb_table.logs_table.name
     redis_host      = aws_elasticache_cluster.redis.cache_nodes[0].address
-    aws_access_key    = var.aws_access_key
-    aws_secret_key    = var.aws_secret_key
+    infra_api_key     = random_password.infra_api_key.result
     eip_allocation_id = aws_eip.controller_asg_eip.id
   }))
 
@@ -137,6 +136,11 @@ resource "aws_iam_role_policy" "controller_policy" {
 resource "aws_iam_instance_profile" "controller_profile" {
   name = "${var.project_name}-controller-profile"
   role = aws_iam_role.controller_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "controller_ssm_attach" {
+  role       = aws_iam_role.controller_role.name
+  policy_arn = data.aws_iam_policy.ssm_core.arn
 }
 
 # 3. Auto Scaling Group for Controller

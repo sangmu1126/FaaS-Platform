@@ -59,9 +59,7 @@ TABLE_NAME=${table_name}
 LOGS_TABLE_NAME=${logs_table_name}
 REDIS_HOST=${redis_host}
 REDIS_PORT=6379
-INFRA_API_KEY=test-api-key
-AWS_ACCESS_KEY_ID=${aws_access_key}
-AWS_SECRET_ACCESS_KEY=${aws_secret_key}
+INFRA_API_KEY=${infra_api_key}
 EOF
 chown ec2-user:ec2-user $APP_DIR/.env
 

@@ -123,8 +123,7 @@ resource "aws_launch_template" "worker" {
     table_name            = aws_dynamodb_table.metadata_table.name
     redis_host            = aws_elasticache_cluster.redis.cache_nodes[0].address
     warm_pool_python_size = var.warm_pool_python_size
-    aws_access_key        = var.aws_access_key
-    aws_secret_key        = var.aws_secret_key
+    infra_api_key         = random_password.infra_api_key.result
 
   }))
 

@@ -41,11 +41,11 @@ resource "aws_security_group" "controller_sg" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "SSH"
+    description = "SSH from VPC only; prefer SSM Session Manager"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [aws_vpc.main.cidr_block]
   }
 
   ingress {

@@ -28,9 +28,7 @@ REDIS_HOST=${redis_host}
 REDIS_PORT=6379
 DOCKER_WORK_DIR_ROOT=/home/ec2-user/faas_workspace
 WARM_POOL_PYTHON_SIZE=${warm_pool_python_size}
-AWS_ACCESS_KEY_ID=${aws_access_key}
-AWS_SECRET_ACCESS_KEY=${aws_secret_key}
-INFRA_API_KEY=test-api-key
+INFRA_API_KEY=${infra_api_key}
 AI_ENDPOINT=http://10.0.20.100:11434
 CONTROLLER_URL=http://$CONTROLLER_IP:8080
 EOF
