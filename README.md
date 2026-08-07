@@ -118,6 +118,9 @@ graph TD
 
 This project is a **Production-Grade FaaS (Function as a Service) platform** built from scratch to address common limitations of public cloud FaaS offerings. It decouples the Control Plane (Controller) from the Compute Plane (Worker) to achieve **independent scalability** and **zero-downtime deployments**.
 
+> Security and reliability changes are documented in
+> [SECURITY_RELIABILITY_HARDENING.md](./SECURITY_RELIABILITY_HARDENING.md), including trust-boundary and execution-flow diagrams.
+
 **Key Achievements:**
 - **📉 -66% Cost Reduction**: optimized architecture by replacing expensive managed components (NAT GW, ALB) with custom application logic and VPC Endpoints.
 - **⚡ Zero Cold Start**: Implemented a "Heavy Warm Pool" scheduler, reducing function wakeup latency by **95% (sub-100ms)**.

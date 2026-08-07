@@ -50,7 +50,7 @@ Note: `.env` is not committed to Git for security (`.env.example` provided).
 
 ```ini
 # frontend/.env
-VITE_API_BASE_URL=http://<YOUR_CONTROLLER_IP>:8080
+VITE_API_BASE_URL=http://<YOUR_BFF_HOST>:8080/api
 ```
 
 ---
@@ -72,8 +72,12 @@ npm run dev
 # backend/.env
 PORT=3000
 AWS_CONTROLLER_URL=http://<YOUR_CONTROLLER_IP>:8080
-INFRA_API_KEY=test-api-key
+INFRA_API_KEY=<TERRAFORM_INFRA_API_KEY_OUTPUT>
+AUTH_TOKEN_SECRET=<AT_LEAST_32_RANDOM_CHARACTERS>
 ```
+
+The infrastructure API key is server-side only. Do not expose it through a
+`VITE_*` variable; the BFF adds it when forwarding requests to the Controller.
 
 ---
 
