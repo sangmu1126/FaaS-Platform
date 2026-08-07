@@ -9,8 +9,9 @@ AMI 제작, Terraform 배포, 장애 진단과 수정 결과를 기록한다. �
 
 ## 1. 결과 요약
 
-AWS 인프라와 Controller/Worker 런타임 배포를 완료했다. Terraform 기준 56개
-리소스가 관리되며 마지막 검증에서 configuration drift는 없었다.
+AWS 인프라와 Controller/Worker 런타임 배포를 완료했다. Terraform apply로 생성한
+managed resource는 56개이며, data source 5개를 포함한 state address는 61개다.
+마지막 검증에서 configuration drift는 없었다.
 
 | 항목 | 배포 결과 |
 |---|---|
@@ -22,7 +23,7 @@ AWS 인프라와 Controller/Worker 런타임 배포를 완료했다. Terraform �
 | Controller ASG | 1대, EIP 자동 연결, rolling refresh 구성 |
 | Worker ASG | 1–10대, SQS backlog 기반 확장, rolling refresh 구성 |
 | Worker 상태 | 1대 healthy, heartbeat 및 runtime pool 확인 |
-| Terraform | `No changes. Your infrastructure matches the configuration.` |
+| Terraform | 56 managed resources, 61 state addresses, no drift |
 
 `/` 주소는 Dashboard가 아니라 Controller API의 discovery endpoint다. 보호된 API는
 `x-api-key` 헤더가 필요하며, 브라우저 사용자는 별도로 배포한 BFF와 Dashboard를
