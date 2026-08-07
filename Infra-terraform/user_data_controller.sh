@@ -38,15 +38,12 @@ if ! command -v pm2 &> /dev/null; then
     npm install -g pm2
 fi
 
-# 6. Clone or Update Repository
-if [ -d "$APP_DIR" ]; then
-    # Directory exists - pull latest
-    cd $APP_DIR
-    git config --global --add safe.directory $APP_DIR
-    git pull origin main || git pull origin master || true
-else
+# 6. Clone only when the AMI does not already contain the application.
+if [ ! -d "$APP_DIR" ]; then
     # Fresh clone
     git clone $GITHUB_REPO $APP_DIR
+elif [ -d "$APP_DIR/.git" ]; then
+    git -C "$APP_DIR" pull --ff-only || true
 fi
 
 # 5. Set ownership
@@ -54,7 +51,7 @@ chown -R ec2-user:ec2-user $APP_DIR
 
 # 6. Install dependencies
 cd $APP_DIR
-su - ec2-user -c "cd $APP_DIR && npm install"
+su - ec2-user -c "cd $APP_DIR && npm ci --omit=dev"
 
 # 7. Create .env file with Terraform values
 cat <<EOF > $APP_DIR/.env
