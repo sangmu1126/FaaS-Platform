@@ -189,7 +189,7 @@ Terraform에서 완전한 dashboard/log aggregation stack을 배포하지는 않
 | `Infra-controller` | Express control plane and public infrastructure API |
 | `Infra-worker` | Python worker agent, Docker execution, metrics, SDK injection |
 | `Infra-AInode` | Ollama-compatible AI client integration |
-| `Infra-packer` | Worker AMI build definition |
+| `Infra-packer` | Worker/Controller AMI build definitions |
 | `application/backend` | Authenticated BFF and Controller proxy |
 | `application/frontend` | React/Vite management dashboard |
 | `tests` | Worker unit tests, controller integration/load/security tests |
@@ -200,15 +200,16 @@ Terraform에서 완전한 dashboard/log aggregation stack을 배포하지는 않
 ## Technology stack
 
 - AWS: EC2, Auto Scaling, SQS, S3, DynamoDB, ElastiCache, CloudWatch, SSM
-- Infrastructure: Terraform, Packer, custom Controller AMI, Amazon Linux 2 Worker AMI template
+- Infrastructure: Terraform, Packer, Amazon Linux 2023 Controller/Worker AMIs
 - Backend: Node.js/Express Controller and BFF, Python Worker
 - Runtime isolation: Docker, Cgroup v2
 - Frontend: React 19, Vite, TypeScript, Zustand, Recharts, Tailwind CSS
 - Tests: Python `unittest`, Node.js integration scripts, K6 load tests
 
-Worker Packer 정의는 현재 Amazon Linux 2 기반 AMI를 생성하고, Terraform의 일반
-Controller AMI 조회는 Amazon Linux 2023을 사용합니다. 실제 Worker 배포에는 Packer가
-생성한 최신 `faas-worker-*` AMI가 사용됩니다.
+Packer는 Amazon Linux 2023 기반 Worker와 Controller AMI를 생성합니다. Terraform은
+self-owned image 중 최신 `faas-worker*`, `faas-controller*` AMI를 각각 선택합니다.
+실제 구현·배포 과정과 검증 결과는
+[구현 및 배포 보고서](./DEPLOYMENT_IMPLEMENTATION_REPORT.md)에 정리되어 있습니다.
 
 ## Getting started
 
@@ -235,10 +236,16 @@ packer init .
 packer build worker-ami.pkr.hcl
 ```
 
-Terraform은 가장 최근의 self-owned `faas-worker*` AMI를 조회합니다. Controller
-Launch Template은 self-owned `faas-controller` AMI를 기대하지만, 해당 Controller
-AMI builder는 이 모노레포에 포함되어 있지 않습니다. Terraform 적용 전에 AMI를
-별도로 준비하거나 `controller_asg.tf`의 AMI source를 환경에 맞게 변경해야 합니다.
+Controller AMI:
+
+```bash
+cd Infra-packer
+packer init .
+packer build controller-ami.pkr.hcl
+```
+
+Terraform은 가장 최근의 self-owned `faas-worker*`, `faas-controller*` AMI를 조회합니다.
+두 AMI를 모두 준비한 다음 Terraform plan을 실행해야 합니다.
 
 ### 2. Provision AWS infrastructure
 
@@ -324,6 +331,7 @@ Worker environment. See [tests/README.md](./tests/README.md) for the environment
 - [Functional and security report](./REPORT_FUNCTIONAL_SECURITY.md)
 - [Troubleshooting guide](./TROUBLESHOOTING.md)
 - [Architecture details](./ARCHITECTURE.md)
+- [Implementation and deployment report](./DEPLOYMENT_IMPLEMENTATION_REPORT.md)
 
 Before a public deployment:
 
