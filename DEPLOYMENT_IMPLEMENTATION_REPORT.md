@@ -1,0 +1,364 @@
+# FaaS Platform 구현 및 배포 보고서
+
+> 기준 시점: 2026-08-07 · 대상 리전: `ap-northeast-2`
+
+이 문서는 프로젝트를 실제로 읽고 검증하면서 수행한 보안·신뢰성 개선, Packer
+AMI 제작, Terraform 배포, 장애 진단과 수정 결과를 기록한다. 단순 작업 목록보다
+각 변경의 **왜(문제와 목적)**, **무엇을(변경 범위)**, **어떻게(구현과 검증)**에
+초점을 둔다.
+
+## 1. 결과 요약
+
+AWS 인프라와 Controller/Worker 런타임 배포를 완료했다. Terraform 기준 56개
+리소스가 관리되며 마지막 검증에서 configuration drift는 없었다.
+
+| 항목 | 배포 결과 |
+|---|---|
+| Controller API | `http://54.180.209.176:8080` |
+| API discovery | `GET /` 정상 JSON 응답 |
+| Health check | `GET /health` → `status: OK`, `version: v2.8` |
+| Controller AMI | `ami-0cc3fec1ee21ebb52` |
+| Worker AMI | `ami-0e09da8ee6e8f8d32` |
+| Controller ASG | 1대, EIP 자동 연결, rolling refresh 구성 |
+| Worker ASG | 1–10대, SQS backlog 기반 확장, rolling refresh 구성 |
+| Worker 상태 | 1대 healthy, heartbeat 및 runtime pool 확인 |
+| Terraform | `No changes. Your infrastructure matches the configuration.` |
+
+`/` 주소는 Dashboard가 아니라 Controller API의 discovery endpoint다. 보호된 API는
+`x-api-key` 헤더가 필요하며, 브라우저 사용자는 별도로 배포한 BFF와 Dashboard를
+통해 접근해야 한다.
+
+## 2. 현재 아키텍처
+
+```mermaid
+flowchart LR
+    Client[API Client] -->|HTTP :8080| EIP[Static EIP]
+    Dashboard[React Dashboard] -->|Bearer token| BFF[Node.js BFF]
+    BFF -->|x-api-key| EIP
+
+    subgraph AWS["AWS VPC 10.0.0.0/16"]
+        subgraph Public[Public subnets]
+            Controller["Controller ASG\n1 instance\nNode.js 22"]
+        end
+
+        subgraph Private[Private subnets / no NAT]
+            Workers["Worker ASG\n1-10 instances"]
+            Redis[(ElastiCache Redis 7)]
+        end
+
+        SQS[SQS + DLQ]
+        S3[(Code and output S3)]
+        DDB[(Metadata and logs DynamoDB)]
+        VPCE["VPC Endpoints\nS3 · DynamoDB · SQS\nSSM · CloudWatch"]
+        SSM[SSM Parameter Store]
+    end
+
+    EIP --> Controller
+    Controller --> SQS
+    Controller <--> Redis
+    Controller --> S3
+    Controller --> DDB
+    Controller -->|publish private IP| SSM
+    Workers -->|long poll| SQS
+    Workers --> S3
+    Workers --> DDB
+    Workers --> Redis
+    Workers -->|resolve Controller IP| SSM
+    Workers -->|authenticated heartbeat| Controller
+    Workers -. private AWS traffic .-> VPCE
+```
+
+React/BFF 코드는 저장소에 있지만 현재 Terraform 배포 범위에는 포함되지 않는다.
+따라서 EIP 주소를 브라우저에서 열면 API 정보가 보이는 것이 정상이며 완성된 웹 화면은
+아니다.
+
+## 3. 왜, 무엇을, 어떻게 변경했는가
+
+### 3.1 Worker 실행 격리
+
+**왜:** 사용자 함수가 Docker에서 실행되므로 host 침해, 과도한 프로세스 생성,
+네트워크·파일시스템 오용 가능성을 줄여야 했다.
+
+**무엇을:** 컨테이너 권한, namespace, filesystem, resource limit과 실행 계측을
+강화했다.
+
+**어떻게:** UID/GID 65534, capability 제거, `no-new-privileges`, PID 제한,
+read-only 성격의 workspace/output tmpfs, archive 기반 코드 주입, Cgroup v2 직접
+계측을 적용했다. 관련 핵심 커밋은 `c8a084af`다.
+
+### 3.2 Controller 인증과 실행 회계
+
+**왜:** 브라우저에 인프라 API key가 노출되면 전체 Controller 권한이 유출되고,
+실행량·duration 집계 오류는 비용 및 관측 결과를 왜곡한다.
+
+**무엇을:** BFF 인증 경계, Controller의 key 검증, Redis rate limit, 실행 결과 집계와
+운영 API를 보강했다.
+
+**어떻게:** 브라우저는 Bearer token만 사용하고 BFF만 `INFRA_API_KEY`를 보유하게
+했다. Controller는 `x-api-key`를 검증하고 Redis Lua token bucket을 적용한다.
+EC2에는 장기 AWS key 대신 instance role을 연결했다. 관련 커밋은 `473ee49d`,
+`492893c0`, `f99a1fa9`다.
+
+### 3.3 재현 가능한 AMI
+
+**왜:** Terraform이 참조할 self-owned Worker/Controller AMI가 없어 최초 plan이
+실패했고, private Worker는 NAT 없이 부팅되므로 런타임 dependency와 Docker image를
+미리 포함해야 했다.
+
+**무엇을:** Worker와 Controller용 Packer template을 모두 마련하고 Amazon Linux
+2023으로 통일했다.
+
+**어떻게:** Worker AMI에는 Docker, Python virtualenv, 서비스 unit, Python/Node/C++/Go
+runtime image를 포함했다. Controller AMI에는 Node.js 22, PM2, 애플리케이션과
+production dependency를 포함했다. Terraform은 `faas-worker*`, `faas-controller*`
+중 가장 최근의 self-owned AMI를 선택한다.
+
+```mermaid
+flowchart LR
+    Source[Repository source] --> Packer[Packer validate/build]
+    Packer --> Temp[Temporary EC2]
+    Temp --> Provision[Install runtime and copy app]
+    Provision --> AMI[Versioned AMI]
+    AMI --> Lookup[Terraform data.aws_ami]
+    Lookup --> LT[Launch Template new version]
+    LT --> Refresh[ASG rolling refresh]
+    Refresh --> Verify[Health and heartbeat verification]
+```
+
+### 3.4 Python dependency 격리
+
+**왜:** 첫 Worker Packer 빌드에서 OS RPM으로 설치된 `requests`를 pip가 제거하려다
+`RECORD file not found` 오류가 발생했다.
+
+**무엇을:** Worker application dependency를 system Python과 분리했다.
+
+**어떻게:** `/home/ec2-user/faas-worker/.venv`를 만들고 requirements를 그 안에
+설치했다. systemd `ExecStart`도 virtualenv Python을 사용하도록 변경했다.
+
+### 3.5 Controller dependency 보안
+
+**왜:** 첫 Controller AMI 빌드에서 production dependency 28건 중 critical 1건과
+high 1건이 확인됐고 Node.js 18은 지원 종료 상태였다.
+
+**무엇을:** AWS SDK, Express 계열 dependency lockfile과 Node runtime을 갱신했다.
+
+**어떻게:** 호환 범위의 `npm audit fix --omit=dev`를 적용해 critical/high를 제거하고
+Node.js 22로 올렸다. 강제 major update가 필요한 `uuid` moderate 1건은 실제 사용
+API와 호환성 검토가 필요해 남겼다. 관련 커밋은 `8b1d19cf`다.
+
+### 3.6 Terraform 인프라 배포
+
+**왜:** AMI만으로는 network, queue, storage, IAM, scaling과 복구 정책이 생성되지
+않는다.
+
+**무엇을:** VPC, public/private subnet, endpoint, Redis, SQS/DLQ, S3, DynamoDB,
+IAM role, Launch Template, ASG, CloudWatch alarm을 Terraform으로 생성했다.
+
+**어떻게:** 매 적용 전 저장된 plan의 create/update/destroy 수를 확인했다. 최초
+계획은 `56 add / 0 change / 0 destroy`였고, 부분 실패 후에는 state를 refresh한 새
+plan만 적용했다. 최종 plan은 no-op이다.
+
+### 3.7 Controller self-healing bootstrap
+
+**왜:** Controller ASG가 EC2 health만 만족해도 application과 EIP가 준비되지 않을 수
+있다. 실제 첫 인스턴스는 EIP를 연결하지 못해 공개 endpoint가 timeout됐다.
+
+**무엇을:** IMDSv2 기반 metadata 조회, deterministic dependency 설치, EIP 재연결,
+SSM private IP 게시와 rolling refresh를 구현했다.
+
+**어떻게:** IMDS token을 먼저 발급받아 instance/private IP를 조회하고,
+`npm ci --omit=dev` 후 PM2로 Controller를 시작한다. Launch Template 변경 시 ASG
+rolling refresh를 사용한다. 관련 커밋은 `fec12063`, `8ebde448`다.
+
+### 3.8 Controller 교체 후 Worker 복구
+
+**왜:** Worker가 부팅 시 읽은 Controller private IP를 계속 보관해 Controller가
+교체되면 heartbeat가 이전 IP로 전송됐다.
+
+**무엇을:** heartbeat 연결 실패 시 Controller endpoint를 다시 찾도록 변경했다.
+
+**어떻게:** Worker는 `URLError` 발생 시 `/faas/controller/private_ip` SSM parameter를
+다시 읽고 다음 heartbeat부터 새 주소를 사용한다. Controller 교체 후 Worker가 별도
+재부팅 없이 다시 `healthy`로 등록되는 것을 확인했다. 관련 커밋은 `d28b11d9`다.
+
+### 3.9 API 루트 응답
+
+**왜:** API가 정상이어도 `/` route가 없으면 Express 기본 응답 `Cannot GET /`가
+나와 배포 실패처럼 보였다.
+
+**무엇을:** 공개 API discovery endpoint를 추가했다.
+
+**어떻게:** `GET /`가 service, version, health 상태, 주요 endpoint와 인증 요구사항을
+JSON으로 반환한다. 현재 인스턴스에 즉시 반영한 뒤 새 Controller AMI를 만들어
+ASG 교체 후에도 같은 응답을 확인했다. 관련 커밋은 `75c3ba86`다.
+
+## 4. 배포 중 발견한 문제와 해결 흐름
+
+```mermaid
+flowchart TD
+    Start[Terraform plan] --> MissingAMI{AMI exists?}
+    MissingAMI -- No --> Build[Packer build Worker and Controller]
+    Build --> PipFail{Worker pip conflict?}
+    PipFail -- Yes --> Venv[Use Python virtualenv]
+    Venv --> Build
+    PipFail -- No --> Apply[Terraform apply]
+    Apply --> RedisFail{Redis API 408?}
+    RedisFail -- Yes --> Replan[Refresh state and create-only replan]
+    Replan --> Apply
+    RedisFail -- No --> DiskFail{Worker volume smaller than AMI?}
+    DiskFail -- Yes --> Resize[8GB to 16GB]
+    Resize --> Apply
+    DiskFail -- No --> EIPFail{EIP or app unavailable?}
+    EIPFail -- Yes --> IMDS[IMDSv2 and deterministic bootstrap]
+    IMDS --> Refresh[Controller rolling refresh]
+    EIPFail -- No --> HeartbeatFail{Worker heartbeat stale?}
+    HeartbeatFail -- Yes --> Rediscover[Refresh Controller IP from SSM]
+    Rediscover --> WorkerRefresh[Worker AMI and rolling refresh]
+    HeartbeatFail -- No --> Verify[Final verification]
+    WorkerRefresh --> Verify
+```
+
+| 증상 | 원인 | 해결 | 검증 |
+|---|---|---|---|
+| Terraform AMI lookup 실패 | self-owned AMI 부재 | 두 Packer builder 추가 | 최신 AMI ID 조회 성공 |
+| Worker Packer pip 실패 | RPM package와 pip 충돌 | virtualenv 설치 | Worker AMI build 성공 |
+| Redis 생성 408 | AWS 일시 오류 | state refresh 후 create-only 재시도 | Redis 7 endpoint 생성 |
+| Worker ASG 생성 거부 | 16GB snapshot에 8GB LT volume | LT volume 16GB | Worker ASG InService |
+| EIP 미연결 | IMDSv1 metadata 조회 실패 | IMDSv2 token 사용 | EIP association 확인 |
+| Controller cloud-init 실패 | `$HOME` 없는 root에서 global git config | baked app 우선, `npm ci` | cloud-init `done`, PM2 online |
+| Worker heartbeat 실패 | 교체 전 private IP 고정 | SSM endpoint 재조회 | Worker registry healthy |
+| `Cannot GET /` | Express root route 부재 | discovery route 추가 | 새 AMI 교체 후 JSON 응답 |
+
+## 5. 최종 검증
+
+```mermaid
+sequenceDiagram
+    participant Operator
+    participant EIP
+    participant Controller
+    participant SSM
+    participant Worker
+    participant Redis
+
+    Operator->>EIP: GET /
+    EIP->>Controller: HTTP :8080
+    Controller-->>Operator: API discovery JSON
+    Operator->>EIP: GET /health
+    Controller->>Redis: connection state
+    Controller-->>Operator: status OK / v2.8
+    Controller->>SSM: publish current private IP
+    Worker->>SSM: resolve Controller private IP
+    Worker->>Controller: POST heartbeat + x-api-key
+    Controller-->>Worker: 200 OK
+    Operator->>Controller: GET /api/workers + x-api-key
+    Controller-->>Operator: 1 healthy Worker
+```
+
+| 검증 | 결과 |
+|---|---|
+| Packer validate | Worker/Controller 모두 통과 |
+| Packer build | 두 최신 AMI 모두 `available` |
+| Terraform validate | 통과 |
+| Terraform apply | 완료, destroy 없음 |
+| Post-deploy plan | No changes |
+| Controller PM2 | online |
+| Controller root | discovery JSON 응답 |
+| Controller health | `OK`, `v2.8` |
+| Worker systemd | active |
+| Worker runtime images | Python, Node.js, GCC, Go ready |
+| Redis/SQS Worker 연결 | 연결 및 polling 확인 |
+| Worker heartbeat | 1 healthy Worker |
+| Controller/Worker refresh | 각 100% successful |
+
+## 6. 커밋 구성
+
+변경 목적별로 커밋을 분리했다.
+
+| Commit | 목적 |
+|---|---|
+| `c8a084af` | Worker container isolation 강화 |
+| `473ee49d` | Controller 운영·실행 회계 보강 |
+| `492893c0` | static AWS credential을 instance role로 교체 |
+| `f99a1fa9` | BFF 인증 경계와 browser secret 제거 |
+| `311d9483` | 보안·신뢰성 문서화 |
+| `420c4fdb` | README를 구현과 정렬 |
+| `602e6cb9` | Terraform provider lock 초기화 |
+| `8b1d19cf` | Controller runtime dependency 보안 업데이트 |
+| `3c16b220` | Controller/Worker Packer builder 추가 |
+| `7b8c835c` | Worker AMI와 LT volume 크기 정합화 |
+| `fec12063` | Controller IMDSv2 bootstrap 적용 |
+| `8ebde448` | Controller bootstrap 재현성 확보 |
+| `d28b11d9` | Worker의 Controller endpoint 자동 갱신 |
+| `9e9b1d4e` | Worker rolling refresh 구성 |
+| `75c3ba86` | Controller root discovery endpoint 추가 |
+
+## 7. 운영 방법
+
+### 상태 확인
+
+```bash
+curl http://54.180.209.176:8080/
+curl http://54.180.209.176:8080/health
+
+cd Infra-terraform
+terraform plan -detailed-exitcode
+```
+
+보호된 endpoint를 호출할 때 API key를 shell history나 문서에 직접 기록하지 않는다.
+운영 환경에서는 managed secret store에서 주입해야 한다.
+
+### 이미지 갱신
+
+```bash
+cd Infra-packer
+packer validate worker-ami.pkr.hcl
+packer build worker-ami.pkr.hcl
+packer validate controller-ami.pkr.hcl
+packer build controller-ami.pkr.hcl
+
+cd ../Infra-terraform
+terraform plan
+terraform apply
+```
+
+새 Launch Template version 적용 후 ASG instance refresh 상태와 `/health`, Worker
+heartbeat를 함께 확인한다.
+
+## 8. 남은 작업
+
+### 우선순위 P0 — 공개 운영 전 필수
+
+1. Controller/BFF 앞에 HTTPS termination과 정식 도메인을 배치한다.
+2. AWS root credential 대신 최소 권한 IAM/SSO 또는 CI OIDC role로 배포한다.
+3. Terraform local state를 암호화·잠금 가능한 remote backend로 이전한다.
+4. API key와 BFF secret을 Secrets Manager/Parameter Store SecureString으로 이전하고
+   rotation 절차를 만든다.
+
+### 우선순위 P1 — 신뢰성과 운영성
+
+1. ASG health를 EC2 상태가 아니라 application health와 연결한다.
+2. 단일 Controller를 ALB 뒤 다중 AZ 구조로 확장하거나 현재 단일 장애 복구 모델을
+   운영 요구사항으로 명시한다.
+3. CloudWatch Logs/Prometheus/Grafana 수집, dashboard와 alert를 Terraform으로 만든다.
+4. AMI lifecycle 정책을 추가하고 이번 작업 중 생성된 이전 AMI와 snapshot을 확인 후
+   정리한다.
+5. BFF와 React Dashboard 배포를 Terraform 또는 별도 delivery pipeline에 포함한다.
+
+### 우선순위 P2 — 기술 부채
+
+1. Worker host Python 3.9를 지원되는 버전으로 올린다.
+2. 함수 runtime image의 Node.js 18, Go 1.19를 지원 버전으로 갱신한다.
+3. `uuid` major upgrade와 Multer 2 전환의 호환성을 검증해 남은 dependency 경고를
+   제거한다.
+4. Packer에서 package/runtime version과 source AMI를 pin하고 자동 보안 rebuild를
+   구성한다.
+5. API discovery에 OpenAPI 문서 링크 또는 `/docs`를 연결한다.
+
+## 9. 범위와 해석
+
+- 이 배포는 Controller와 Worker를 포함한 AWS infrastructure 배포다.
+- React Dashboard와 BFF는 코드로 존재하지만 아직 AWS에 배포되지 않았다.
+- README의 성능·비용 수치는 별도 직접 측정 결과이며 이번 배포 과정에서 재측정하지
+  않았다.
+- AMI ID, EIP, resource name은 이 배포 시점의 snapshot이며 이후 배포에서 바뀔 수
+  있다. 변동 가능한 값의 기준은 항상 `terraform output`과 AWS 조회 결과다.
