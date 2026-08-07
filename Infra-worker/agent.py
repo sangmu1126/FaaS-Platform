@@ -38,6 +38,7 @@ class InfraAgent:
         
         # Clients
         self.sqs = boto3.client('sqs', region_name=self.config.get("AWS_REGION", "ap-northeast-2"))
+        self.ssm = boto3.client('ssm', region_name=self.config.get("AWS_REGION", "ap-northeast-2"))
         self.redis_client = redis.Redis(
             host=self.config["REDIS_HOST"],
             port=int(self.config.get("REDIS_PORT", 6379)),
@@ -214,11 +215,11 @@ class InfraAgent:
             logger.warning("CONTROLLER_URL not set, heartbeat push disabled")
             return
             
-        heartbeat_endpoint = f"{controller_url}/api/worker/heartbeat"
         worker_id = socket.gethostname()
         
         while self.running:
             try:
+                heartbeat_endpoint = f"{controller_url}/api/worker/heartbeat"
                 heartbeat_data = {
                     "workerId": worker_id,
                     "timestamp": time.time(),
@@ -250,6 +251,17 @@ class InfraAgent:
                 
             except urllib.error.URLError as e:
                 logger.warning("Heartbeat push failed", error=str(e))
+                try:
+                    private_ip = self.ssm.get_parameter(
+                        Name="/faas/controller/private_ip"
+                    )["Parameter"]["Value"]
+                    refreshed_url = f"http://{private_ip}:8080"
+                    if refreshed_url != controller_url:
+                        controller_url = refreshed_url
+                        self.config["CONTROLLER_URL"] = controller_url
+                        logger.info("Controller endpoint refreshed", controller_url=controller_url)
+                except Exception as refresh_error:
+                    logger.warning("Controller endpoint refresh failed", error=str(refresh_error))
             except Exception as e:
                 logger.warning("Heartbeat push error", error=str(e))
             
