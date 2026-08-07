@@ -1,5 +1,7 @@
 # High-Performance FaaS Platform
 
+[Korean](./README_KOR.md) | **English**
+
 A custom FaaS (Function as a Service) platform built with AWS EC2, Docker, SQS,
 Redis, S3, and DynamoDB. It separates the control plane from the compute plane and
 reuses pre-warmed Docker containers to reduce function startup latency and
