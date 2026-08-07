@@ -43,9 +43,7 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-.terraform.lock.hcl
-# Exclude terraform lock file from ignore if you want to track it
-# kept .terraform.lock.hcl tracked
+# Terraform dependency lock files are tracked for reproducible provider versions.
 
 # Editor directories
 .idea/

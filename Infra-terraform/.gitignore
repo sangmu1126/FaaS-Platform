@@ -4,7 +4,7 @@
 *.tfstate.*
 *.tfplan
 tfplan
-.terraform.lock.hcl
+# Track .terraform.lock.hcl for reproducible provider versions.
 
 # Secrets & Keys
 .env

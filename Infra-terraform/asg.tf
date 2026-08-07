@@ -90,7 +90,7 @@ data "aws_ami" "custom_worker" {
 
   filter {
     name   = "name"
-    values = ["faas-worker*"]  # Matches faas-worker, faas-worker-fixed-*, etc.
+    values = ["faas-worker*"] # Matches faas-worker, faas-worker-fixed-*, etc.
   }
 }
 
@@ -142,10 +142,10 @@ resource "aws_launch_template" "worker" {
 # 3. Auto Scaling Group
 resource "aws_autoscaling_group" "worker" {
   name                = "${var.project_name}-worker-asg"
-  vpc_zone_identifier = [aws_subnet.private_a.id, aws_subnet.private_b.id]  # Private Subnets
-  min_size         = 1
-  max_size         = 10
-  desired_capacity = 1
+  vpc_zone_identifier = [aws_subnet.private_a.id, aws_subnet.private_b.id] # Private Subnets
+  min_size            = 1
+  max_size            = 10
+  desired_capacity    = 1
 
   launch_template {
     id      = aws_launch_template.worker.id

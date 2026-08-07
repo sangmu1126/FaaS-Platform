@@ -26,12 +26,12 @@ resource "aws_launch_template" "controller" {
   vpc_security_group_ids = [aws_security_group.controller_sg.id]
 
   user_data = base64encode(templatefile("${path.module}/user_data_controller.sh", {
-    aws_region      = var.aws_region
-    sqs_url         = aws_sqs_queue.task_queue.url
-    bucket_name     = aws_s3_bucket.code_bucket.bucket
-    table_name      = aws_dynamodb_table.metadata_table.name
-    logs_table_name = aws_dynamodb_table.logs_table.name
-    redis_host      = aws_elasticache_cluster.redis.cache_nodes[0].address
+    aws_region        = var.aws_region
+    sqs_url           = aws_sqs_queue.task_queue.url
+    bucket_name       = aws_s3_bucket.code_bucket.bucket
+    table_name        = aws_dynamodb_table.metadata_table.name
+    logs_table_name   = aws_dynamodb_table.logs_table.name
+    redis_host        = aws_elasticache_cluster.redis.cache_nodes[0].address
     infra_api_key     = random_password.infra_api_key.result
     eip_allocation_id = aws_eip.controller_asg_eip.id
   }))
