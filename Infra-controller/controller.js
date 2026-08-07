@@ -344,6 +344,22 @@ const upload = multer({
     limits: { fileSize: 50 * 1024 * 1024 }
 });
 
+// API discovery endpoint
+app.get('/', (req, res) => {
+    res.json({
+        service: 'FaaS Controller API',
+        version: VERSION,
+        status: isRedisConnected ? 'OK' : 'ERROR',
+        endpoints: {
+            health: '/health',
+            metrics: '/metrics',
+            functions: '/api/functions',
+            workers: '/api/workers'
+        },
+        authentication: 'Protected endpoints require the x-api-key header.'
+    });
+});
+
 // Health Check
 app.get(['/health', '/api/health'], (req, res) => {
     const status = isRedisConnected ? 200 : 503;
