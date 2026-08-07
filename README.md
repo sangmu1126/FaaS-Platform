@@ -1,294 +1,335 @@
-# 🚀 High-Performance FaaS Platform (Cost-Optimized HA)
+# High-Performance FaaS Platform
 
-> **A Custom Serverless Engine engineered on AWS EC2 & Docker, designed to overcome Cold Start latency and provide enterprise-grade reliability at minimal cost.**
+AWS EC2, Docker, SQS, Redis, S3, and DynamoDB로 구성한 커스텀 FaaS
+(Function as a Service) 플랫폼입니다. Control Plane과 Compute Plane을 분리하고,
+미리 준비한 Docker 컨테이너를 재사용하여 함수 실행 지연과 인프라 비용을 줄이는
+것을 목표로 합니다.
+
+이 저장소는 아키텍처와 성능을 검증하는 프로젝트입니다. Worker 자동 확장,
+Controller 자동 복구, 함수 격리, 인증, 관측 기능을 구현했지만 TLS 종료, 다중 BFF
+사용자 저장소, Application 배포 자동화 등은 운영 환경에 맞게 추가해야 합니다.
+
+## Architecture
 
 ```mermaid
-graph TD
-    %% 🎨 Style Definitions
-    classDef client fill:#333,stroke:#fff,stroke-width:2px,color:#fff
-    classDef control fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
-    classDef worker fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
-    classDef aws fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100
-    classDef storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
-    classDef ai fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f
-    classDef monitor fill:#e0f7fa,stroke:#006064,stroke-width:2px,color:#006064
-    classDef empty width:0px,height:0px,stroke:none,fill:none,color:none
+flowchart LR
+    User[User] --> Web[React Dashboard]
+    Web -->|Bearer token| BFF[Node.js BFF]
+    BFF -->|x-api-key| EIP[Controller EIP :8080]
 
-    %% 🌐 External World
-    User[User / Client]:::client -->|HTTPS POST /run| EIP(Elastic IP):::aws
-    AINode[AI Node / Ollama]:::ai
-    
-    %% ☁️ AWS VPC Boundary
-    subgraph "AWS VPC"
-        direction TB
-        
-        %% 1. Shared Managed Services
-        subgraph "Shared Services<br>(VPC Endpoints & Gateway)"
-            direction TB
-            SQS[AWS SQS - Job Queue]:::aws
-            Redis_Global[(Redis Cluster)]:::storage
-            S3[(AWS S3)]:::storage
-            DDB[(DynamoDB)]:::storage
-        end
-        
-        %% 2. Monitoring Stack
-        subgraph "Observability"
-            direction TB
-            Prom[Prometheus]:::monitor
-            CW[CloudWatch]:::monitor
+    subgraph AWS VPC
+        subgraph Public Subnets
+            EIP --> Controller[Controller ASG<br/>min 1 / max 1]
         end
 
-        %% 3. Control Plane
-        subgraph "Public Subnet<br>(Control Plane)"
-            direction TB
-            Space1[ ]:::empty
-            
-            Controller[Controller Service]:::control
-            
-            %% Internal Logic
-            RateLimit{Rate Limiter}:::control
-            Auth{Auth Guard}:::control
-            
-            Space1 ~~~ Controller
-            Controller --> Auth
-            Auth -->|x-api-key Valid| RateLimit
-            RateLimit -->|Token Bucket Check| Redis_Global
+        subgraph Private Subnets
+            Worker[Worker ASG<br/>1-10 instances]
+            Redis[(ElastiCache Redis)]
+            AINode[Ollama AI Node]
         end
 
-        %% 4. Compute Plane
-        subgraph "Private Subnet<br>(Compute Plane)"
-            direction TB
-            Space2[ ]:::empty
-            
-            Agent[Worker Agent]:::worker
-            
-            %% Worker Internals
-            subgraph "Worker Instance<br>(EC2)"
-                direction TB
-                Space3[ ]:::empty
-                
-                WarmPool[Warm Pool]:::worker
-                Container[User Container]:::worker
-                MetricCollector["Metric Collector<br>(Cgroup v2)"]:::worker
-                
-                Space3 ~~~ WarmPool
-            end
-            
-            Space2 ~~~ Agent
-        end
+        SQS[AWS SQS]
+        S3[(AWS S3)]
+        DDB[(DynamoDB)]
+        CW[CloudWatch Metrics]
     end
-    
-    %% Connections (Logic Flow)
-    %% Inbound
-    EIP -- Port 8080 --> Controller
-    Controller --> Auth
-    Auth --> RateLimit
-    RateLimit -->|Check| Redis_Global
-    
-    %% Job Dispatch
-    RateLimit -->|Allowed| SQS
-    Controller -->|Upload Code| S3
-    
-    %% Worker Execution
-    Agent -->|1. Pop| SQS
-    Agent -->|2. Get| WarmPool
-    Agent -->|3. Download| S3
-    Agent -->|4. Inject & Run| Container
-    Agent -->|Upload Output| S3
-    Container -->|Inference| AINode
-    
-    %% Monitoring Flow (Updated)
-    Container -.->|Usage Stats| MetricCollector
-    MetricCollector -.->|Direct Parse| Agent
-    Agent -.->|Metrics| Prom
-    Agent -.->|Peak Memory| CW
-    Controller -.->|Metrics| Prom
-    
-    %% Reporting
-    Controller -->|Logs| DDB
-    Agent -->|Heartbeat| Controller
-    Agent -->|Pub Result| Redis_Global
-    Redis_Global -->|Sub Result| Controller
-    Controller -->|Response| User
+
+    Controller -->|enqueue| SQS
+    Controller -->|metadata and logs| DDB
+    Controller -->|code archive| S3
+    Controller <-->|rate limit and results| Redis
+
+    Worker -->|long polling| SQS
+    Worker -->|download code / upload output| S3
+    Worker -->|publish result| Redis
+    Worker -->|authenticated heartbeat| Controller
+    Worker -->|peak memory| CW
+    Worker -->|private inference call| AINode
 ```
 
----
+React와 BFF는 `application/`에 구현되어 있지만 현재 Terraform 배포 범위에는
+포함되지 않습니다. Controller는 기본적으로 EIP의 HTTP 8080 포트를 사용하므로,
+공개 운영 시에는 별도의 HTTPS reverse proxy 또는 TLS 종료 계층이 필요합니다.
 
-## 📖 Overview
+## How a function runs
 
-This project is a **Production-Grade FaaS (Function as a Service) platform** built from scratch to address common limitations of public cloud FaaS offerings. It decouples the Control Plane (Controller) from the Compute Plane (Worker) to achieve **independent scalability** and **zero-downtime deployments**.
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant BFF
+    participant Controller
+    participant SQS
+    participant Worker
+    participant Container
+    participant Redis
 
-> Security and reliability changes are documented in
-> [SECURITY_RELIABILITY_HARDENING.md](./SECURITY_RELIABILITY_HARDENING.md), including trust-boundary and execution-flow diagrams.
+    Browser->>BFF: POST /api/run + Bearer token
+    BFF->>Controller: POST /run + x-api-key
+    Controller->>SQS: enqueue task
+    Worker->>SQS: long poll and receive
+    Worker->>Container: acquire warm container and inject code
+    Container-->>Worker: stdout, output, resource metrics
+    Worker->>Redis: publish result:{requestId}
+    Redis-->>Controller: result event
+    Controller-->>BFF: synchronous result
+    BFF-->>Browser: execution response
+```
 
-**Key Achievements:**
-- **📉 -66% Cost Reduction**: optimized architecture by replacing expensive managed components (NAT GW, ALB) with custom application logic and VPC Endpoints.
-- **⚡ Zero Cold Start**: Implemented a "Heavy Warm Pool" scheduler, reducing function wakeup latency by **95% (sub-100ms)**.
-- **🚀 120,000x Faster Monitoring**: Bypassed Docker API overhead by directly parsing **Linux Cgroups** ([📄 View Benchmark: 15.5µs Avg](./tests/worker/benchmark_simple.py)), reducing metric collection latency to microseconds.
-- **🛡️ Enterprise Reliability**: Features Self-healing Workers, Rate Limiting (Redis Lua), and Autonomic Scaling based on SQS backlogs.
+비동기 요청은 즉시 `jobId`를 반환하며 `/api/status/:jobId`에서 Redis에 저장된
+결과를 조회할 수 있습니다.
 
----
+## Core capabilities
 
-## 📁 Directory Structure
+### Application and access control
 
-> **Note:** Each component is developed in its own repository and synchronized here via `git subtree`. Check the upstream links for the latest updates.
+- React 19 Dashboard에서 함수 배포, 실행, 로그 및 metric 조회
+- Node.js BFF에서 회원가입, 로그인, HMAC 서명 토큰 검증
+- 비밀번호는 Node.js `scrypt`로 해시
+- 브라우저는 Controller API key를 보유하지 않고 BFF만 `INFRA_API_KEY` 사용
+- Controller에서 Redis Lua token bucket rate limiting 수행
 
-| Directory | Description | Upstream Repository |
-|-----------|-------------|---------------------|
-| `Infra-terraform` | Infrastructure-as-Code (VPC, EC2, SQS, VPC Endpoints) | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-terraform](https://github.com/sangmu1126/Infra-terraform) |
-| `Infra-controller` | Controller Service (Node.js API Gateway) | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-controller](https://github.com/sangmu1126/Infra-controller) |
-| `Infra-worker` | Worker Agent (Python, Docker Warm Pool) | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-worker](https://github.com/sangmu1126/Infra-worker) |
-| `Infra-AInode` | AI Node integration (Ollama SDK) | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-AInode](https://github.com/sangmu1126/Infra-AInode) |
-| `Infra-packer` | Packer scripts for Worker AMI | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [Infra-packer](https://github.com/sangmu1126/Infra-packer) |
-| `application` | Frontend (React) & Backend Gateway | <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" width="16"/> [FaaS-Application](https://github.com/sangmu1126/FaaS-Application) |
-| `tests` | Load testing (K6), E2E scripts | *(local only)* |
+현재 BFF 사용자 저장소는 로컬 `auth-users.json`입니다. 단일 BFF 데모에는 사용할
+수 있지만 여러 BFF 인스턴스를 운영하려면 DynamoDB나 RDS 같은 공유 저장소로
+교체해야 합니다.
 
----
+### Controller
 
-## 🏗️ Architecture Design
+- 함수 ZIP을 S3에 업로드하고 메타데이터를 DynamoDB에 저장
+- SQS를 통한 동기·비동기 작업 dispatch
+- Redis Pub/Sub 결과 수신과 비동기 결과 TTL 저장
+- DynamoDB 실행 로그와 invocation/duration 집계
+- Worker heartbeat registry와 system status 제공
+- Prometheus 형식의 HTTP 및 함수 실행 metric 노출
+- 단일 인스턴스 ASG와 EIP 재연결을 통한 장애 시 자동 교체
 
-### 🔹 Core Components
-1.  **Controller Service (Node.js/Express)**
-    - Acts as the **API Gateway** & **Control Plane**.
-    - Handles Authentication, Traffic Management, and Job Dispatching.
-    - **Scalability**: Auto Scaling Group (min=1) with **Elastic IP Self-Healing**.
-    - **Security**: Rate Limiting via Redis (Token Bucket Algorithm) & Trusted Proxy configuration.
+Controller ASG는 `min=1`, `max=1`입니다. 이는 자동 복구 구성이며 동시에 여러
+Controller가 요청을 처리하는 고가용성 구성은 아닙니다.
 
-2.  **Worker Service (Python/Docker)**
-    - The **Compute Plane** executing user code in isolated Docker environments.
-    - **Networking**: Deployed in **Private Subnets** (No Internet Access) for security.
-    - **Connectivity**: Uses **VPC Endpoints** (S3, DynamoDB, SQS) to access AWS services without NAT Gateway.
-    - **Health Check**: Implements "Heartbeat Push" pattern to eliminate Load Balancer dependency.
+### Worker
 
-3.  **Event Bus & State**
-    - **SQS (Simple Queue Service)**: Decouples components. Controller pushes jobs; Workers pull them (Long Polling).
-    - **Redis (ElastiCache)**: Stores Hot State (Task Results, Rate Limits) and facilitates Pub/Sub for real-time response.
+- SQS batch long polling과 thread 기반 병렬 실행
+- Python, Node.js, C++, Go 런타임 지원
+- Runtime warm pool과 함수별 container 재사용
+- UID/GID 65534 실행, Linux capability 제거, `no-new-privileges`, PID 제한
+- `/workspace`, `/output` tmpfs와 Docker archive copy를 통한 코드 전달
+- Cgroup v2 직접 조회를 통한 CPU, peak memory, disk I/O 수집
+- Container network 통계를 통한 network usage 수집
+- 실행 결과와 생성 파일을 S3에 비동기 업로드
 
-### 🔹 Cost-Optimized Strategy
-| Component | Standard Approach | **Our Optimized Approach** | Savings |
-|-----------|-------------------|----------------------------|---------|
-| **NAT Gateway** | $32/mo | **VPC Endpoints** | **Saved $32/mo** |
-| **Load Balancer** | $20/mo (ALB) | **Heartbeat Push Logic** | **Saved $20/mo** |
-| **Recovery** | Manual/expensive | **ASG Self-Healing + Pre-baked AMI** | **Included** |
-| **Total** | ~$68/mo | **~$23/mo** | **📉 66%** |
+### Resource recommendation
 
-> **⚠️ Architectural Trade-offs**
-> * **No Outbound Internet:** By removing NAT Gateway for cost savings, Worker nodes cannot access public APIs directly (Solved via `Proxy Service` for specific whitelisted domains).
-> * **Cold Start vs Cost:** Keeping a "Warm Pool" consumes memory even when idle. We optimized this by using a dynamic pool size based on daily traffic patterns.
+Worker의 Auto-Tuner는 peak memory, CPU, network, disk 사용량을 분석하여 권장
+메모리와 예상 절감액을 결과에 포함합니다. 권장값은 자동으로 적용되지 않으며,
+사용자나 별도 운영 자동화가 Controller의 함수 설정 API를 호출해야 합니다.
 
----
+### Scaling and networking
 
-## 🛠 Tech Stack
+- Worker ASG: `min=1`, `max=10`, SQS backlog-per-instance target tracking
+- 추가 SQS high/low backlog alarm을 통한 scale-out/scale-in 보조
+- Worker와 Redis는 private subnet에 배치
+- NAT Gateway 대신 S3, DynamoDB, SQS, SSM, CloudWatch VPC Endpoint 사용
+- Controller는 public subnet의 단일 인스턴스 ASG로 자동 복구
+- SSH는 VPC 내부로 제한하고 SSM Session Manager 사용을 권장
 
-### Infrastructure
--   **Cloud**: AWS (EC2, VPC, S3, DynamoDB, SQS, ElastiCache, CloudWatch)
--   **Observability**: Prometheus (Metrics), CloudWatch (Logs), Grafana (Visualization)
--   **IaC**: Terraform (Modularized state management)
--   **OS**: Amazon Linux 2 (Custom Pre-baked AMI)
+Warm container 개수는 현재 환경 변수로 정적으로 설정됩니다. 트래픽 패턴을 학습해
+pool 크기를 자동 조절하는 기능은 포함되어 있지 않습니다.
 
-### Backend
--   **Runtime**: Node.js (Controller), Python (Worker)
--   **Containerization**: Docker (Runtime Isolation)
--   **Cache**: Redis (Lua Scripting for high-concurrency atomic operations)
+## Performance and cost results
 
-### Testing
--   **Load Testing**: K6 (Local & Cloud Distributed Testing)
--   **Unit/Integration**: Jest, PyTest
+아래 값은 프로젝트에서 직접 수행한 benchmark와 load test 결과입니다. 관련 스크립트는
+`tests/`에, 상세 분석은 [성능·확장성 보고서](./REPORT_PERFORMANCE_SCALABILITY.md)에
+정리되어 있습니다.
 
----
+| 항목 | 측정 결과 |
+|---|---:|
+| 비용 절감 | 기존 약 $68/month → 약 $23/month, **66% 절감** |
+| Warm Pool 함수 wakeup | **95% 감소, sub-100ms** |
+| Runtime initialization | Native 약 **120ms**, Interpreted 약 **200ms** |
+| Peak throughput | **520 requests/second** |
+| Sustained throughput | **241 requests/second, 0% error rate** |
+| Cgroup metric read | 평균 **15.5µs** |
+| Docker API 대비 metric 수집 | **120,000x 향상** (`1994ms → 0.0155ms`) |
 
-## 📊 Performance & Verification
+Cost comparison:
 
-### 1. Load Testing (K6)
-Validated against **200 concurrent Virtual Users** (Simulating traffic spike) on a single `t3.small` instance.
--   **Throughput**: **520 Req/sec** verified (Peak throughput).
--   **Stability**: **241 Req/sec** sustained with 0% error rate.
--   **Bottleneck**: Test environment CPU contention (Controller + K6 on same node).
--   **Rate Limiter**: Effectively blocked excess traffic (`429 Too Many Requests`) in `<150ms`.
+| Component | Standard approach | Current approach | Measured estimate |
+|---|---|---|---:|
+| NAT Gateway | Managed NAT Gateway | VPC Endpoints | $32/month 절감 |
+| Load Balancer | ALB | EIP + heartbeat/self-healing | $20/month 절감 |
+| Recovery | Manual replacement | ASG + pre-built AMI | 별도 관리 비용 감소 |
+| Total | 약 $68/month | 약 $23/month | **66% 절감** |
 
-### 2. Auto Scaling Strategy
-Used **Target Tracking Scaling** based on `BacklogPerInstance` metric.
-> *"We don't just scale on queue length. We scale on 'Work per Worker'. Processing 100 fast tasks doesn't need new servers, but 5 heavy tasks might."*
+Load test 조건과 해석은 다음 자료에서 확인할 수 있습니다.
 
-### 3. Security Hardening
--   **Isolation**: No direct internet access for compute nodes.
--   **Input Validation**: Strict schema validation for function uploads.
--   **Resource Limits**: Kernel-level Cgroup limits (CPU/Memory) enforced on every container.
+- [Performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY.md)
+- [Cgroup benchmark](./tests/worker/benchmark_simple.py)
+- [Controller load tests](./tests/controller)
 
-### 4. Observability & Monitoring
--   **Metrics Pipeline**: Worker Agent pushes real-time metrics (CPU/Memory/Duration) to **Prometheus**.
--   **Log Aggregation**: All distributed logs are centralized in **AWS CloudWatch Logs**.
--   **Self-Healing Feedback**: "Smart Auto-Tuner" analyzes usage data to optimize resource allocation dynamically.
+## Observability and storage
 
----
+| Data | Collection | Destination |
+|---|---|---|
+| Controller HTTP latency | `prom-client` | Controller `/metrics` scrape endpoint |
+| Function duration/invocation | Redis result subscriber | Controller `/metrics`, DynamoDB metadata |
+| Worker jobs/duration | `prometheus_client` | Worker `:8000/metrics` scrape endpoint |
+| Peak memory | Cgroup v2 | CloudWatch custom metric |
+| Execution logs | Worker result → Controller | DynamoDB logs table with TTL |
+| Generated files | Worker output uploader | S3 user-data bucket |
+| Process logs | JSON stdout/stderr | External collector 구성 시 수집 가능 |
 
-## 🧠 Engineering Deep Dive
+Prometheus는 Worker나 Controller가 metric을 push하는 구조가 아니라 각 HTTP endpoint를
+scrape합니다. Grafana와 CloudWatch Logs agent는 선택적으로 연결할 수 있지만 현재
+Terraform에서 완전한 dashboard/log aggregation stack을 배포하지는 않습니다.
 
-### 1. Warm Pool Architecture (Cold Start Optimization)
--   **Problem**: Lambda Cold Start (~3s latency).
--   **Solution**: Implemented **Pre-warmed Pool** & **Fast Allocator (O(1))** algorithm.
--   **Result**: Reduced init latency to **~120ms (Native) / ~200ms (Interpreted)**, achieving **96% performance improvement**.
+## Repository layout
 
-### 2. Kernel-Level Observability
--   **Problem**: Docker API overhead caused high latency (~2s) for metrics.
--   **Solution**: Built a pipeline to **directly parse Cgroup v2** files (`/sys/fs/cgroup/...`), bypassing the Daemon.
--   **Result**: Metric collection speedup **120,000x** (1994ms → 0.0155ms).
+| Directory | Responsibility |
+|---|---|
+| `Infra-terraform` | VPC, EC2 ASG, SQS, S3, DynamoDB, Redis, VPC Endpoints, IAM |
+| `Infra-controller` | Express control plane and public infrastructure API |
+| `Infra-worker` | Python worker agent, Docker execution, metrics, SDK injection |
+| `Infra-AInode` | Ollama-compatible AI client integration |
+| `Infra-packer` | Worker AMI build definition |
+| `application/backend` | Authenticated BFF and Controller proxy |
+| `application/frontend` | React/Vite management dashboard |
+| `tests` | Worker unit tests, controller integration/load/security tests |
 
-### 3. Security Pipe (Isolation Strategy)
--   **Trade-off**: Bind Mount (Fast but insecure) vs Docker CP (Slow but secure).
--   **Decision**: Prioritized isolation. Implemented **`docker cp` based one-way transfer** and **Non-root execution** policy.
--   **Result**: Verified security integrity against container breakout attacks, trading 110ms I/O overhead for safety.
+각 주요 디렉터리는 별도 upstream repository에서 개발된 이력이 있으며 이 저장소에
+통합되어 있습니다.
 
-### 4. Concurrency Control (Race Conditions)
--   **Challenge**: `t3.micro` (2 vCPU) + 200 VU load caused container allocation race conditions.
--   **Solution**: Replaced heavy Redis Locks with **Python `threading.Lock`** for minimal overhead.
--   **Result**: Zero allocation errors under max load without CPU spikes.
+## Technology stack
 
-### 5. Resilience (Zombie Reaper)
--   **Challenge**: Infinite loops in user code causing resource leaks.
--   **Solution**: Implemented **Reaper Pattern** (SIGTERM → 10s Wait → SIGKILL) to force-release resources.
--   **Result**: **0MB Memory Leak** confirmed under malicious code tests.
+- AWS: EC2, Auto Scaling, SQS, S3, DynamoDB, ElastiCache, CloudWatch, SSM
+- Infrastructure: Terraform, Packer, custom Controller AMI, Amazon Linux 2 Worker AMI template
+- Backend: Node.js/Express Controller and BFF, Python Worker
+- Runtime isolation: Docker, Cgroup v2
+- Frontend: React 19, Vite, TypeScript, Zustand, Recharts, Tailwind CSS
+- Tests: Python `unittest`, Node.js integration scripts, K6 load tests
 
----
+Worker Packer 정의는 현재 Amazon Linux 2 기반 AMI를 생성하고, Terraform의 일반
+Controller AMI 조회는 Amazon Linux 2023을 사용합니다. 실제 Worker 배포에는 Packer가
+생성한 최신 `faas-worker-*` AMI가 사용됩니다.
 
-## 🚀 Getting Started
+## Getting started
 
 ### Prerequisites
--   AWS CLI configured with appropriate credentials
--   Terraform v1.0+ installed
--   Node.js 18+ & Python 3.9+ environments
--   Docker installed (for local testing)
 
-### 1. Clone & Configure
+- AWS CLI profile, AWS SSO, 또는 CI OIDC Role
+- Terraform 1.0+
+- Packer 1.9+
+- Node.js 18+
+- Python 3.9+
+- Docker Engine이 설치된 Linux Worker 환경
+
+Terraform과 EC2 `.env`에 장기 AWS Access/Secret Key를 입력하지 않습니다. Terraform은
+실행 환경의 AWS credential chain을 사용하고 EC2 애플리케이션은 Instance Profile을
+사용합니다.
+
+### 1. Prepare AMIs
+
+Worker AMI:
+
 ```bash
-# Clone the repository
-git clone https://github.com/sangmu1126/FaaS-Platform.git
-cd FaaS-Platform
-
-# Create environment file
-cp .env.example .env
-# Edit .env with your AWS settings (BUCKET_NAME, REDIS_HOST, etc.)
+cd Infra-packer
+packer init .
+packer build worker-ami.pkr.hcl
 ```
 
-### 2. Deploy Infrastructure (Terraform)
+Terraform은 가장 최근의 self-owned `faas-worker*` AMI를 조회합니다. Controller
+Launch Template은 self-owned `faas-controller` AMI를 기대하지만, 해당 Controller
+AMI builder는 이 모노레포에 포함되어 있지 않습니다. Terraform 적용 전에 AMI를
+별도로 준비하거나 `controller_asg.tf`의 AMI source를 환경에 맞게 변경해야 합니다.
+
+### 2. Provision AWS infrastructure
+
 ```bash
 cd Infra-terraform
 terraform init
-terraform plan          # Review changes
-terraform apply -auto-approve
+terraform fmt -check
+terraform validate
+terraform plan
+terraform apply
 ```
 
-### 3. Running Tests
+배포 후 BFF에 전달할 내부 키와 Controller 주소를 확인합니다.
+
 ```bash
-# Health Check
-node tests/test_health_aws.js
-
-# Load Test (Cloud)
-k6 run -e K6_BASE_URL=http://[YOUR_ELASTIC_IP]:8080/api tests/load_test_k6_cloud.js
+terraform output -raw infra_api_key
+terraform output -raw api_endpoint
 ```
 
-### 4. Access the Dashboard
-After deployment, access the management dashboard at:
+### 3. Start the BFF
+
+```bash
+cd application/backend
+npm install
+cp .env.example .env
 ```
-http://[YOUR_ELASTIC_IP]:3000
+
+필수 환경 변수:
+
+```dotenv
+PORT=8080
+AWS_CONTROLLER_URL=http://<CONTROLLER_HOST>:8080
+INFRA_API_KEY=<TERRAFORM_INFRA_API_KEY_OUTPUT>
+AUTH_TOKEN_SECRET=<AT_LEAST_32_RANDOM_CHARACTERS>
 ```
+
+```bash
+npm run dev
+```
+
+### 4. Start the dashboard
+
+```bash
+cd application/frontend
+npm ci
+cp .env.example .env
+```
+
+```dotenv
+VITE_API_BASE_URL=http://<BFF_HOST>:8080/api
+```
+
+```bash
+npm run dev
+```
+
+Vite development server의 기본 주소는 `http://localhost:3000`입니다.
+
+### 5. Run local checks
+
+Worker unit tests:
+
+```bash
+python3 -m venv /tmp/faas-platform-venv
+source /tmp/faas-platform-venv/bin/activate
+pip install -r Infra-worker/requirements.txt
+python -m unittest discover -s tests/unit -p 'test_*.py'
+```
+
+Frontend production build:
+
+```bash
+npm ci --prefix application/frontend
+npm run build --prefix application/frontend
+```
+
+AWS integration and load tests require a deployed Controller, Redis, SQS, DynamoDB, S3, and
+Worker environment. See [tests/README.md](./tests/README.md) for the environment-specific commands.
+
+## Security and operational notes
+
+- [Security and reliability hardening](./SECURITY_RELIABILITY_HARDENING.md)
+- [Functional and security report](./REPORT_FUNCTIONAL_SECURITY.md)
+- [Troubleshooting guide](./TROUBLESHOOTING.md)
+- [Architecture details](./ARCHITECTURE.md)
+
+Before a public deployment:
+
+1. Add HTTPS termination in front of the BFF and Controller.
+2. Move BFF users from `auth-users.json` to a shared database.
+3. Store BFF secrets in a managed secret store and define rotation procedures.
+4. Run Docker isolation tests on the target Linux/Cgroup v2 host.
+5. Configure Prometheus scraping, dashboarding, alerting, and centralized process logs.
+6. Add a multi-Controller design if request-plane high availability is required.
