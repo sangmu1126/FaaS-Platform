@@ -1,110 +1,65 @@
-
-import unittest
-import json
-import shutil
-from pathlib import Path
-from dataclasses import dataclass, field
-from unittest.mock import MagicMock, patch
 import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock
 
-# --- Mock Modules Setup (Must be before import) ---
-sys.modules["docker"] = MagicMock()
-sys.modules["boto3"] = MagicMock()
-sys.modules["structlog"] = MagicMock()
+sys.path.insert(0, str(Path(__file__).parents[2] / "Infra-worker"))
 
-# Fix path
-sys.path.insert(0, str(Path(__file__).parent.parent / "Infra-worker"))
+from executor import TaskExecutor
+from models import TaskMessage
 
-# Import target class
-from executor import TaskExecutor, TaskMessage
 
 class TestPayloadLogic(unittest.TestCase):
     def setUp(self):
-        self.mock_config = {"DOCKER_WORK_DIR_ROOT": "/tmp/test_work", "AWS_REGION": "us-east-1"}
-        self.executor = TaskExecutor(self.mock_config)
-        
-        # Mocks
-        self.executor.docker = MagicMock()
-        self.executor.s3 = MagicMock()
-        self.executor.pools = {"python": MagicMock()} # avoid init issues
-        self.executor.pool_locks = {"python": MagicMock()}
-        
-        # Determine working dir
-        self.work_dir = Path("/tmp/test_work/req-123")
-        self.work_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Add output dir
-        (self.work_dir / "output").mkdir(exist_ok=True)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.workspace = Path(self.temp_dir.name)
+        self.container = MagicMock(id="a" * 64, is_warm=False)
+        self.containers = MagicMock()
+        self.containers.acquire_container.return_value = self.container
+        self.containers.get_cgroup_cpu_usage.return_value = 0
+        self.containers.get_network_stats.return_value = (0, 0)
+        self.containers.get_disk_stats.return_value = (0, 0)
+        self.containers.get_cgroup_memory_peak.return_value = 0
+        self.storage = MagicMock()
+        self.storage.prepare_workspace.return_value = self.workspace
+        self.metrics = MagicMock()
+        self.metrics.global_limit.acquire.return_value = True
+        self.metrics.analyze_execution.return_value = (None, None, 128)
+        self.executor = TaskExecutor(
+            {}, self.containers, self.storage, self.metrics, MagicMock()
+        )
+        self.executor._execute_in_container = MagicMock(return_value=(0, b"ok"))
+        self.executor._trigger_background_reporting = MagicMock()
 
     def tearDown(self):
-        if self.work_dir.exists():
-            shutil.rmtree(self.work_dir)
+        self.temp_dir.cleanup()
 
-    def test_run_large_payload(self):
-        """Test large payload uses file instead of env var"""
-        # Create > 100KB payload
-        large_payload = {"data": "A" * (100 * 1024 + 10)} 
+    def run_task(self, payload):
         task = TaskMessage(
-            request_id="req-123", function_id="func-1", runtime="python", s3_key="key", payload=large_payload
+            request_id="req-123",
+            function_id="func-1",
+            runtime="python",
+            s3_key="key",
+            payload=payload,
         )
-        
-        # Mock methods to isolate run logic part
-        self.executor._prepare_workspace = MagicMock(return_value=self.work_dir)
-        self.executor._acquire_container = MagicMock()
-        self.executor._replenish_pool = MagicMock()
-        self.executor.cw = MagicMock()
-        self.executor.uploader = MagicMock()
-        
-        # Mock container
-        mock_container = MagicMock()
-        mock_container.exec_run.return_value = (0, b"")
-        mock_container.stats.return_value = {'memory_stats': {'usage': 100}}
-        self.executor._acquire_container.return_value = mock_container
-        
-        # Prevent cleanup using patch
-        with patch("shutil.rmtree") as mock_rmtree:
-            # Execute
-            result = self.executor.run(task)
-            print(f"DEBUG: Run Result: {result.success}, {result.stderr}")
-            
-            # Verify call args for exec_run
-            call_args = mock_container.exec_run.call_args
-            env_vars = call_args[1]['environment']
-            
-            # Check logic results
-            self.assertNotIn("PAYLOAD", env_vars, "PAYLOAD env var should be removed")
-            self.assertIn("PAYLOAD_FILE", env_vars, "PAYLOAD_FILE env var should be present")
-            self.assertEqual(env_vars["PAYLOAD_FILE"], "/workspace/req-123/payload.json")
-            
-            # Verify file creation
-            payload_file = self.work_dir / "payload.json"
-            self.assertTrue(payload_file.exists(), "Payload file should exist")
+        result = self.executor.run(task)
+        env = self.executor._execute_in_container.call_args.args[2]
+        return result, env
 
-    def test_run_small_payload(self):
-        """Test small payload uses env var"""
-        small_payload = {"data": "small"}
-        task = TaskMessage(
-            request_id="req-123", function_id="func-1", runtime="python", s3_key="key", payload=small_payload
-        )
-        
-        # Mocks
-        self.executor._prepare_workspace = MagicMock(return_value=self.work_dir)
-        self.executor._acquire_container = MagicMock(return_value=MagicMock())
-        self.executor._replenish_pool = MagicMock()
-        self.executor.cw = MagicMock()
-        self.executor.uploader = MagicMock()
-        
-        mock_container = self.executor._acquire_container.return_value
-        mock_container.exec_run.return_value = (0, b"")
-        
-        with patch("shutil.rmtree"):
-            self.executor.run(task)
-            
-            call_args = mock_container.exec_run.call_args
-            env_vars = call_args[1]['environment']
-            
-            self.assertIn("PAYLOAD", env_vars, "PAYLOAD env var should be present")
-            self.assertNotIn("PAYLOAD_FILE", env_vars, "PAYLOAD_FILE env var should NOT be present")
+    def test_large_payload_uses_file(self):
+        result, env = self.run_task({"data": "A" * (100 * 1024 + 10)})
+        self.assertTrue(result.success)
+        self.assertNotIn("PAYLOAD", env)
+        self.assertEqual(env["PAYLOAD_FILE"], "/workspace/payload.json")
+        self.assertTrue((self.workspace / "payload.json").exists())
 
-if __name__ == '__main__':
+    def test_small_payload_uses_environment(self):
+        result, env = self.run_task({"message": "hello"})
+        self.assertTrue(result.success)
+        self.assertIn("PAYLOAD", env)
+        self.assertNotIn("PAYLOAD_FILE", env)
+
+
+if __name__ == "__main__":
     unittest.main()

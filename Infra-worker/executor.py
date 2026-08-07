@@ -261,7 +261,13 @@ class TaskExecutor:
         # Streaming execution (faster, may have occasional issues)
         def _run_streaming():
             try:
-                exec_result = container.exec_run(final_cmd, workdir="/workspace", environment=env, stream=True, user="appuser")
+                exec_result = container.exec_run(
+                    final_cmd,
+                    workdir="/workspace",
+                    environment=env,
+                    stream=True,
+                    user="65534:65534"
+                )
                 
                 # Handle both tuple (exit_code, generator) and just generator
                 if isinstance(exec_result, tuple):
@@ -278,20 +284,27 @@ class TaskExecutor:
                 with open(log_file, "wb") as f:
                     f.write(f"[Stream Error] {str(e)}".encode())
 
-        t = threading.Thread(target=_run_streaming)
+        t = threading.Thread(target=_run_streaming, daemon=True)
         t.start()
         t.join(timeout=timeout_ms / 1000.0)
         
         if t.is_alive():
             try: container.stop(timeout=1)
             except: pass
+            # Give Docker's stream iterator a chance to close before the host
+            # workspace is cleaned up by the caller.
+            t.join(timeout=5)
             with open(log_file, "ab") as f:
                 f.write(b"\n...[TIMEOUT]...")
             raise TimeoutError(f"Execution timed out after {timeout_ms}ms")
             
         # Read Exit Code
         try:
-            ec_out = container.exec_run("cat /workspace/exit_code.txt", workdir="/workspace", user="appuser")
+            ec_out = container.exec_run(
+                "cat /workspace/exit_code.txt",
+                workdir="/workspace",
+                user="65534:65534"
+            )
             result["exit_code"] = int(ec_out.output.decode().strip())
         except:
             result["exit_code"] = -1 # content not found or error
@@ -362,4 +375,3 @@ class TaskExecutor:
                     
         except Exception as e:
             logger.warning("Failed to inject system files", error=str(e))
-

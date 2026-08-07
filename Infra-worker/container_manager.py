@@ -67,7 +67,15 @@ class ContainerManager:
                 img, command="tail -f /dev/null", detach=True,
                 network_mode="bridge",
                 mem_limit="1024m",
-                cpu_quota=100000 
+                cpu_quota=100000,
+                user="65534:65534",
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges:true"],
+                pids_limit=128,
+                tmpfs={
+                    "/workspace": "rw,nosuid,nodev,exec,size=256m,mode=1777",
+                    "/output": "rw,nosuid,nodev,exec,size=256m,mode=1777"
+                }
             )
             c.pause()
             
