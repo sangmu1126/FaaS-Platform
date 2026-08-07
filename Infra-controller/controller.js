@@ -361,7 +361,7 @@ app.get(['/metrics', '/api/metrics'], async (req, res) => {
 });
 
 // Worker Heartbeat Receiver (NAT-free health check)
-app.post('/api/worker/heartbeat', (req, res) => {
+app.post('/api/worker/heartbeat', authenticate, (req, res) => {
     try {
         const { workerId, status, pools, activeJobs, uptimeSeconds, timestamp } = req.body;
         if (!workerId) {
@@ -387,7 +387,7 @@ app.post('/api/worker/heartbeat', (req, res) => {
 });
 
 // Worker Status (list all known workers)
-app.get(['/api/workers', '/api/worker/status'], (req, res) => {
+app.get(['/api/workers', '/api/worker/status'], authenticate, (req, res) => {
     const workers = [];
     const now = Date.now();
 
@@ -409,7 +409,7 @@ app.get(['/api/workers', '/api/worker/status'], (req, res) => {
 
 
 // Model Catalog
-app.get(['/models', '/api/models'], async (req, res) => {
+app.get(['/models', '/api/models'], authenticate, async (req, res) => {
     try {
         const aiNodeUrl = process.env.AI_NODE_URL || 'http://10.0.20.100:11434';
         const timeoutMs = parseInt(process.env.AI_NODE_TIMEOUT || "2000");
@@ -440,7 +440,7 @@ app.get(['/models', '/api/models'], async (req, res) => {
 });
 
 // System Status
-app.get(['/system/status', '/api/system/status'], cors(), async (req, res) => {
+app.get(['/system/status', '/api/system/status'], cors(), authenticate, async (req, res) => {
     try {
         // 1. Try Aggregating from Worker Registry (Preferred for Uptime/Multi-worker)
         let totalPools = { python: 0, nodejs: 0, cpp: 0, go: 0 };
@@ -564,13 +564,6 @@ app.post(['/run', '/api/run'], authenticate, rateLimiter, async (req, res) => {
         }));
         if (!Item) return res.status(404).json({ error: "Function not found" });
 
-        db.send(new UpdateItemCommand({
-            TableName: process.env.TABLE_NAME,
-            Key: { functionId: { S: functionId } },
-            UpdateExpression: "ADD invocations :inc",
-            ExpressionAttributeValues: { ":inc": { N: "1" } }
-        })).catch(err => logger.error("Count Update Failed", err));
-
         // Parse Env Vars from DynamoDB
         let envVars = {};
         if (Item.envVars && Item.envVars.S) {
@@ -660,7 +653,7 @@ app.post(['/debug/loadtest', '/api/debug/loadtest'], authenticate, (req, res) =>
     const scriptPath = require('path').join(__dirname, 'scripts', 'stress_test.js');
 
     // Pass current API Key to child process
-    const env = { ...process.env, INFRA_API_KEY: process.env.INFRA_API_KEY || 'test-api-key' };
+    const env = { ...process.env, INFRA_API_KEY: process.env.INFRA_API_KEY };
 
     const child = spawn('node', [scriptPath], { env });
 
@@ -795,23 +788,26 @@ app.get('/api/functions/:id/logs/:requestId', cors(), authenticate, async (req, 
 
         // DynamoDB Query
 
-        const command = new QueryCommand({
-            TableName: process.env.LOGS_TABLE_NAME,
-            KeyConditionExpression: "functionId = :fid",
-            FilterExpression: "requestId = :rid",
-            ExpressionAttributeValues: {
-                ":fid": { S: id },
-                ":rid": { S: requestId }
-            },
-            Limit: 1
-        });
+        let item;
+        let exclusiveStartKey;
+        do {
+            const response = await db.send(new QueryCommand({
+                TableName: process.env.LOGS_TABLE_NAME,
+                KeyConditionExpression: "functionId = :fid",
+                FilterExpression: "requestId = :rid",
+                ExpressionAttributeValues: {
+                    ":fid": { S: id },
+                    ":rid": { S: requestId }
+                },
+                ExclusiveStartKey: exclusiveStartKey
+            }));
+            item = response.Items?.[0];
+            exclusiveStartKey = response.LastEvaluatedKey;
+        } while (!item && exclusiveStartKey);
 
-        const response = await db.send(command);
-        if (!response.Items || response.Items.length === 0) {
+        if (!item) {
             return res.status(404).json({ error: "Log not found" });
         }
-
-        const item = response.Items[0];
         res.json({
             message: item.message?.S || ""
         });

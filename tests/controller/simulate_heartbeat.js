@@ -7,7 +7,8 @@ const CONTROLLER_URL = 'http://localhost:8080/api/worker/heartbeat';
 // const CONTROLLER_URL = 'http://3.38.96.228:8080/api/worker/heartbeat';
 
 const WORKER_ID = 'simulated-worker-local';
-const API_KEY = 'test-api-key';
+const API_KEY = process.env.INFRA_API_KEY;
+if (!API_KEY) throw new Error('INFRA_API_KEY is required');
 
 function sendHeartbeat() {
     const data = JSON.stringify({
@@ -24,7 +25,7 @@ function sendHeartbeat() {
         headers: {
             'Content-Type': 'application/json',
             'Content-Length': data.length,
-            // 'x-api-key': API_KEY // Not needed per code analysis, but adding for completeness if things change
+            'x-api-key': API_KEY
         }
     };
 

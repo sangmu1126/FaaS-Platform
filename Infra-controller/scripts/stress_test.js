@@ -1,6 +1,7 @@
 const http = require('http');
 
-const API_KEY = process.env.INFRA_API_KEY || 'test-api-key';
+const API_KEY = process.env.INFRA_API_KEY;
+if (!API_KEY) throw new Error('INFRA_API_KEY is required');
 const HOST = 'localhost';
 const PORT = 8080;
 const CONCURRENCY = 50;

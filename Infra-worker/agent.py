@@ -237,7 +237,10 @@ class InfraAgent:
                 req = urllib.request.Request(
                     heartbeat_endpoint,
                     data=json.dumps(heartbeat_data).encode('utf-8'),
-                    headers={'Content-Type': 'application/json'},
+                    headers={
+                        'Content-Type': 'application/json',
+                        'x-api-key': self.config['INFRA_API_KEY']
+                    },
                     method='POST'
                 )
                 
