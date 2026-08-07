@@ -9,7 +9,8 @@ export const config = {
         token: process.env.SLACK_BOT_TOKEN,
         channelId: process.env.SLACK_CHANNEL_ID,
     },
-    infraApiKey: process.env.INFRA_API_KEY || 'test-api-key',
+    infraApiKey: process.env.INFRA_API_KEY,
+    authTokenSecret: process.env.AUTH_TOKEN_SECRET,
 
     // Runtime Config
     runtimes: {

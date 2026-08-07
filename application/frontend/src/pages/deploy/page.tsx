@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
 import { functionApi } from '../../services/functionApi'; // Import API
-import { CONFIG } from '../../config';
+import { getAuthHeaders } from '../../services/api';
 import JSZip from 'jszip';
 
 export default function DeployPage() {
@@ -225,7 +225,7 @@ func main() {
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/upload`, {
         method: 'POST',
         headers: {
-          'x-api-key': CONFIG.API_KEY,
+          ...getAuthHeaders(),
           'x-runtime': formData.language,
           'x-memory-mb': formData.memory.toString(),
           'x-function-name': encodeURIComponent(formData.name)

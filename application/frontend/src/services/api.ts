@@ -8,6 +8,11 @@ interface ApiError {
   status?: number;
 }
 
+export function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('auth_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
@@ -32,7 +37,6 @@ class ApiClient {
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'x-api-key': CONFIG.API_KEY,
       ...(options.headers as Record<string, string>),
     };
 
@@ -44,8 +48,6 @@ class ApiClient {
     if (options.body instanceof FormData) {
       delete headers['Content-Type'];
     }
-
-    console.log(`[API] ${endpoint} Headers:`, headers); // Debug header issues
 
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -61,15 +63,11 @@ class ApiClient {
         throw error;
       }
 
+      if (response.status === 204) return undefined as T;
       return await response.json();
     } catch (error) {
-      if (error instanceof Error) {
-        throw {
-          message: error.message,
-          status: 500,
-        } as ApiError;
-      }
-      throw error;
+      if (error && typeof error === 'object' && 'message' in error) throw error;
+      throw { message: 'Network request failed', status: 500 } as ApiError;
     }
   }
 

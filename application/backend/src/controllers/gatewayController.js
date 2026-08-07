@@ -106,7 +106,7 @@ export const gatewayController = {
             const scriptPath = path.join(__dirname, '../../scripts/stress_test.js');
             const env = {
                 ...process.env,
-                INFRA_API_KEY: process.env.INFRA_API_KEY || 'test-api-key',
+                INFRA_API_KEY: process.env.INFRA_API_KEY,
                 LOAD_TEST_MODE: mode,
                 TARGET_FUNCTION_ID: targetFunctionId,
                 LOAD_TEST_DURATION: duration.toString(),

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import { functionApi } from '../../services/functionApi';
+import { getAuthHeaders } from '../../services/api';
 import { logApi } from '../../services/logApi';
 import { ConfirmModal } from '../../components/ConfirmModal';
 
@@ -173,7 +174,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`);
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`, { headers: getAuthHeaders() });
         if (res.ok) {
           const data = await res.json();
           setSystemStatus(data);
@@ -192,7 +193,7 @@ export default function DashboardPage() {
 
   const checkHeartbeat = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`);
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSystemStatus(data);

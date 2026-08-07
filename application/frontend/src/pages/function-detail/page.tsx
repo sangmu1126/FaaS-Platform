@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 
 import { functionApi } from '../../services/functionApi';
+import { getAuthHeaders } from '../../services/api';
 import { logApi } from '../../services/logApi';
 import { useAlertStore } from '../../store/alertStore';
 import { ConfirmModal } from '../../components/ConfirmModal';
@@ -60,7 +61,7 @@ export default function FunctionDetailPage() {
       });
 
       // Fetch system status for Warm Pool data
-      const systemRequest = fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`)
+      const systemRequest = fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`, { headers: getAuthHeaders() })
         .then(res => res.json())
         .catch(err => {
           console.warn('Failed to load system status:', err);

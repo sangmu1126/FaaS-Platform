@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import Sidebar from '../dashboard/components/Sidebar';
 import Header from '../dashboard/components/Header';
 import { functionApi } from '../../services/functionApi';
+import { getAuthHeaders } from '../../services/api';
+import { CONFIG } from '../../config';
 // logApi import removed - not currently used
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -59,12 +61,12 @@ export default function MetricsPage() {
         setTerminalLogs(['$ Initializing Virtual Users...', '$ Connecting to Load Generator...']);
 
         try {
-            const token = localStorage.getItem('api_key') || 'test-api-key';
-            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/debug/loadtest`, {
+            const token = localStorage.getItem('auth_token');
+            const response = await fetch(`${CONFIG.API_BASE_URL}/debug/loadtest`, {
                 method: 'POST',
                 headers: {
-                    'x-api-key': token,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
                 },
                 body: JSON.stringify({ mode: testMode })
             });
@@ -101,10 +103,10 @@ export default function MetricsPage() {
     // Stop Load Test Handler
     const handleStopLoadTest = async () => {
         try {
-            const token = localStorage.getItem('api_key') || 'test-api-key';
-            await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/loadtest/stop`, {
+            const token = localStorage.getItem('auth_token');
+            await fetch(`${CONFIG.API_BASE_URL}/loadtest/stop`, {
                 method: 'POST',
-                headers: { 'x-api-key': token }
+                headers: token ? { Authorization: `Bearer ${token}` } : {}
             });
             setTerminalLogs(prev => [...prev, '⛔ Load Test STOPPED by user']);
             setIsTestRunning(false);
@@ -190,7 +192,7 @@ export default function MetricsPage() {
                 } catch (statsErr) {
                     console.warn('Dashboard stats not available, fetching Prometheus directly');
                     // Fallback to direct Prometheus fetch
-                    const promRes = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/metrics/prometheus`);
+                    const promRes = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/metrics/prometheus`, { headers: getAuthHeaders() });
                     if (promRes.ok) {
                         const promText = await promRes.text();
                         const parsed = parsePrometheusMetrics(promText);

@@ -32,6 +32,7 @@ lerna-debug.log*
 
 # Smart Telemetry Gateway Specifics
 telemetry.json
+auth-users.json
 gateway-combined.log
 gateway-error.log
 uploads/

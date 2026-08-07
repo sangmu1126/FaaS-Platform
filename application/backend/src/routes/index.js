@@ -1,9 +1,19 @@
 import express from 'express';
 import multer from 'multer';
 import { gatewayController } from '../controllers/gatewayController.js';
+import { authController } from '../controllers/authController.js';
+import { authenticate } from '../middleware/authenticate.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() }); // In-memory for processing
+
+router.post('/auth/register', authController.register);
+router.post('/auth/login', authController.login);
+router.get('/health', (req, res) => res.json({ status: 'OK', role: 'Smart Gateway' }));
+
+router.use(authenticate);
+router.get('/auth/me', authController.me);
+router.post('/auth/logout', authController.logout);
 
 // Functions
 router.get('/functions', gatewayController.listFunctions);
@@ -29,7 +39,6 @@ router.get('/status/:jobId', gatewayController.getJobStatus);
 router.get('/logs', gatewayController.getLogs);
 
 // Health & Status
-router.get('/health', (req, res) => res.json({ status: 'OK', role: 'Smart Gateway' }));
 router.get('/system/status', gatewayController.getSystemStatus);
 router.get('/worker/health', gatewayController.getWorkerHealth);
 router.get('/metrics/prometheus', gatewayController.getPrometheusMetrics);

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { getAuthHeaders } from '../../../services/api';
 
 interface SidebarProps {
   onSystemStatusClick?: () => void;
@@ -16,7 +17,7 @@ export default function Sidebar({ systemStatus: externalStatus, onSystemStatusCl
 
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`);
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/system/status`, { headers: getAuthHeaders() });
         if (res.ok) {
           const data = await res.json();
           setInternalStatus(data);
