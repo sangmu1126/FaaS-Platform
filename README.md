@@ -16,43 +16,53 @@ deployment.
 ```mermaid
 flowchart LR
     User[User] --> Web[React Dashboard]
-    Web -->|Bearer token| BFF[Node.js BFF]
-    BFF -->|x-api-key| EIP[Controller EIP :8080]
+    Web -->|Bearer token| BFF[Node.js BFF<br/>not provisioned by Terraform]
+    BFF -->|HTTP :8080 / x-api-key| EIP[Controller EIP]
 
-    subgraph AWS VPC
-        subgraph Public Subnets
-            EIP --> Controller[Controller ASG<br/>min 1 / max 1]
+    subgraph VPC[AWS VPC]
+        subgraph Public[Public subnets / 2 AZs]
+            Controller[Controller ASG<br/>desired 1]
         end
 
-        subgraph Private Subnets
+        subgraph Private[Private subnets / 2 AZs]
             Worker[Worker ASG<br/>1-10 instances]
             Redis[(ElastiCache Redis)]
-            AINode[Ollama AI Node]
+            Endpoints[VPC Endpoints]
         end
 
-        SQS[AWS SQS]
-        S3[(AWS S3)]
-        DDB[(DynamoDB)]
-        CW[CloudWatch Metrics]
+        EIP --> Controller
+        Worker -->|authenticated heartbeat<br/>to private IP| Controller
+        Controller <-->|rate limits and results| Redis
+        Worker -->|publish results| Redis
+        Worker --> Endpoints
     end
 
-    Controller -->|enqueue| SQS
-    Controller -->|metadata and logs| DDB
-    Controller -->|code archive| S3
-    Controller <-->|rate limit and results| Redis
+    SQS[AWS SQS]
+    S3[(AWS S3)]
+    DDB[(DynamoDB)]
+    CW[CloudWatch]
+    AI[External Ollama AI Node<br/>optional / not provisioned]
 
-    Worker -->|long polling| SQS
-    Worker -->|download code / upload output| S3
-    Worker -->|publish result| Redis
-    Worker -->|authenticated heartbeat| Controller
-    Worker -->|peak memory| CW
-    Worker -->|private inference call| AINode
+    Controller -->|enqueue tasks| SQS
+    Controller -->|function metadata and logs| DDB
+    Controller -->|code archives| S3
+    Worker -->|long polling via endpoint| SQS
+    Worker -->|code and output via endpoint| S3
+    Worker -->|peak-memory metrics via endpoint| CW
+    Endpoints -. private AWS access .-> SQS
+    Endpoints -. private AWS access .-> S3
+    Endpoints -. private AWS access .-> DDB
+    Endpoints -. private AWS access .-> CW
+    Worker -. AI_ENDPOINT .-> AI
 ```
 
 The React dashboard and BFF are implemented under `application/`, but they are not
 currently included in the Terraform deployment. The Controller uses HTTP port 8080
 on an EIP by default, so a public production deployment requires a separate HTTPS
 reverse proxy or TLS termination layer.
+
+The Ollama AI Node is an optional external integration referenced by `AI_ENDPOINT`.
+This repository does not currently provision the AI Node or its network with Terraform.
 
 ## How a function runs
 
