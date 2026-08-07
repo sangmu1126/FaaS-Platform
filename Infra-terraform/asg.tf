@@ -155,6 +155,15 @@ resource "aws_autoscaling_group" "worker" {
   health_check_type         = "EC2"
   health_check_grace_period = 300
 
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      instance_warmup        = 120
+      min_healthy_percentage = 0
+    }
+  }
+
   # Wait for instances to be healthy before marking ASG as complete
   wait_for_capacity_timeout = "10m"
 
