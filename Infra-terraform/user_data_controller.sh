@@ -8,11 +8,18 @@ GITHUB_REPO="https://github.com/sangmu1126/Infra-controller.git"
 APP_DIR="/home/ec2-user/faas-controller"
 
 # 1. Associate Elastic IP (Critical for external access)
-INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id ${eip_allocation_id} --region ${aws_region}
+IMDS_TOKEN=$(curl -fsS -X PUT \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+    http://169.254.169.254/latest/api/token)
+INSTANCE_ID=$(curl -fsS \
+    -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+    http://169.254.169.254/latest/meta-data/instance-id)
+aws ec2 associate-address --instance-id "$INSTANCE_ID" --allocation-id ${eip_allocation_id} --region ${aws_region}
 
 # 2. Publish Private IP to SSM for Workers
-PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+PRIVATE_IP=$(curl -fsS \
+    -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+    http://169.254.169.254/latest/meta-data/local-ipv4)
 aws ssm put-parameter --name "/faas/controller/private_ip" --value "$PRIVATE_IP" --type "String" --overwrite --region ${aws_region}
 
 # 3. Install Git if not present

@@ -25,6 +25,11 @@ resource "aws_launch_template" "controller" {
 
   vpc_security_group_ids = [aws_security_group.controller_sg.id]
 
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
+
   user_data = base64encode(templatefile("${path.module}/user_data_controller.sh", {
     aws_region        = var.aws_region
     sqs_url           = aws_sqs_queue.task_queue.url
@@ -159,6 +164,15 @@ resource "aws_autoscaling_group" "controller" {
 
   health_check_type         = "EC2"
   health_check_grace_period = 300
+
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      instance_warmup        = 120
+      min_healthy_percentage = 0
+    }
+  }
 
   tag {
     key                 = "Name"
