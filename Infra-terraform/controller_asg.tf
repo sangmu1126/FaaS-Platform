@@ -9,7 +9,7 @@ data "aws_ami" "custom_controller" {
 
   filter {
     name   = "name"
-    values = ["faas-controller"]
+    values = ["faas-controller*"]
   }
 }
 

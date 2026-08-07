@@ -17,12 +17,11 @@ variable "instance_type" {
   default = "t3.small"
 }
 
-source "amazon-ebs" "worker" {
-  ami_name      = "faas-worker-${formatdate("YYYYMMDD-hhmmss", timestamp())}"
+source "amazon-ebs" "controller" {
+  ami_name      = "faas-controller-${formatdate("YYYYMMDD-hhmmss", timestamp())}"
   instance_type = var.instance_type
   region        = var.region
 
-  # Cgroup v2 is required by the worker metrics collector.
   source_ami_filter {
     filters = {
       name                = "al2023-ami-2023.*-x86_64"
@@ -37,36 +36,34 @@ source "amazon-ebs" "worker" {
 
   launch_block_device_mappings {
     device_name           = "/dev/xvda"
-    volume_size           = 16
+    volume_size           = 8
     volume_type           = "gp3"
     delete_on_termination = true
   }
 
   tags = {
-    Name    = "faas-worker-packer"
+    Name    = "faas-controller-packer"
     Builder = "Packer"
   }
 }
 
 build {
-  sources = ["source.amazon-ebs.worker"]
+  sources = ["source.amazon-ebs.controller"]
 
-  # Upload script
   provisioner "file" {
-    source      = "setup-worker.sh"
-    destination = "/tmp/setup-worker.sh"
+    source      = "setup-controller.sh"
+    destination = "/tmp/setup-controller.sh"
   }
 
   provisioner "file" {
-    source      = "../Infra-worker"
+    source      = "../Infra-controller"
     destination = "/tmp"
   }
 
-  # Execute setup
   provisioner "shell" {
     inline = [
-      "chmod +x /tmp/setup-worker.sh",
-      "sudo /tmp/setup-worker.sh"
+      "chmod +x /tmp/setup-controller.sh",
+      "sudo /tmp/setup-controller.sh"
     ]
   }
 }

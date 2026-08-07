@@ -9,7 +9,7 @@ User=ec2-user
 Group=ec2-user
 WorkingDirectory=/home/ec2-user/faas-worker
 EnvironmentFile=/home/ec2-user/faas-worker/.env
-ExecStart=/usr/bin/python3 /home/ec2-user/faas-worker/agent.py
+ExecStart=/home/ec2-user/faas-worker/.venv/bin/python /home/ec2-user/faas-worker/agent.py
 Restart=always
 RestartSec=10
 # 로그 설정
