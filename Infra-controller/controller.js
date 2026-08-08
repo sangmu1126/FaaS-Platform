@@ -146,6 +146,13 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                 if (!result || !result.functionId) return;
 
                 const duration = result.durationMs !== undefined ? result.durationMs : (result.duration_ms || 0);
+                const rawHandlerDuration = result.handlerDurationMs !== undefined
+                    ? result.handlerDurationMs
+                    : result.handler_duration_ms;
+                const handlerDurationMs = Number(rawHandlerDuration);
+                const hasHandlerDuration = rawHandlerDuration != null
+                    && Number.isFinite(handlerDurationMs)
+                    && handlerDurationMs >= 0;
                 const memoryBytes = result.peakMemoryBytes !== undefined ? result.peakMemoryBytes : (result.peak_memory_bytes || 0);
                 const memoryMb = memoryBytes ? Math.round(memoryBytes / 1024 / 1024) : 0;
 
@@ -174,6 +181,9 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                         message: { S: safeMessage },
                         expiresAt: { N: expiresAt.toString() }
                     };
+                    if (hasHandlerDuration) {
+                        logItem.handlerDurationMs = { N: handlerDurationMs.toString() };
+                    }
 
                     db.send(new PutItemCommand({
                         TableName: process.env.LOGS_TABLE_NAME,
@@ -182,14 +192,20 @@ redisSub.on('pmessage', (pattern, channel, message) => {
 
                     // Increment Invocations & Total Duration (for Avg Latency)
                     if (process.env.TABLE_NAME) {
+                        let updateExpression = "ADD invocations :inc, totalDuration :dur";
+                        const expressionAttributeValues = {
+                            ":inc": { N: "1" },
+                            ":dur": { N: duration.toString() }
+                        };
+                        if (hasHandlerDuration) {
+                            updateExpression += ", handlerInvocations :inc, totalHandlerDuration :handlerDur";
+                            expressionAttributeValues[":handlerDur"] = { N: handlerDurationMs.toString() };
+                        }
                         db.send(new UpdateItemCommand({
                             TableName: process.env.TABLE_NAME,
                             Key: { functionId: { S: result.functionId } },
-                            UpdateExpression: "ADD invocations :inc, totalDuration :dur",
-                            ExpressionAttributeValues: {
-                                ":inc": { N: "1" },
-                                ":dur": { N: duration.toString() }
-                            }
+                            UpdateExpression: updateExpression,
+                            ExpressionAttributeValues: expressionAttributeValues
                         })).then(() => console.log(`[STATS] Updated stats for ${result.functionId}`))
                             .catch(err => console.error("[STATS] Failed to increment stats:", err));
                     } else {
@@ -205,6 +221,7 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                         functionId: result.functionId,
                         requestId: requestId,
                         duration: duration,
+                        handlerDurationMs: hasHandlerDuration ? handlerDurationMs : null,
                         memory: memoryMb,
                         status: result.status,
                         exitCode: result.exitCode
@@ -215,6 +232,12 @@ redisSub.on('pmessage', (pattern, channel, message) => {
                 try {
                     const durationSec = duration / 1000;
                     functionDuration.observe({ functionId: result.functionId, status: result.status }, durationSec);
+                    if (hasHandlerDuration) {
+                        functionHandlerDuration.observe(
+                            { functionId: result.functionId, status: result.status },
+                            handlerDurationMs / 1000
+                        );
+                    }
                     functionInvocations.inc({ functionId: result.functionId, status: result.status });
                 } catch (e) {
                     console.error("Failed to observe metrics", e);
@@ -312,6 +335,14 @@ const functionDuration = new client.Histogram({
     buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30]
 });
 register.registerMetric(functionDuration);
+
+const functionHandlerDuration = new client.Histogram({
+    name: 'function_handler_duration_seconds',
+    help: 'Duration of user handler execution only, excluding Worker orchestration',
+    labelNames: ['functionId', 'status'],
+    buckets: [0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 30]
+});
+register.registerMetric(functionHandlerDuration);
 
 const functionInvocations = new client.Counter({
     name: 'function_invocations_total',
@@ -701,6 +732,9 @@ app.get(['/functions', '/api/functions'], cors(), authenticate, async (req, res)
             avgDuration: (item.invocations && parseInt(item.invocations.N) > 0 && item.totalDuration)
                 ? Math.round(parseInt(item.totalDuration.N) / parseInt(item.invocations.N))
                 : 0,
+            avgHandlerDuration: (item.handlerInvocations && parseInt(item.handlerInvocations.N) > 0 && item.totalHandlerDuration)
+                ? Number((Number(item.totalHandlerDuration.N) / parseInt(item.handlerInvocations.N)).toFixed(3))
+                : null,
             uploadedAt: item.uploadedAt ? item.uploadedAt.S : new Date().toISOString()
         }));
         res.json(items);
@@ -743,6 +777,7 @@ app.get('/api/functions/:id/logs', cors(), authenticate, async (req, res) => {
                 timestamp: l.timestamp,
                 status: l.status,
                 duration: l.duration,
+                handlerDurationMs: l.handlerDurationMs ?? null,
                 memory: l.memory,
                 message: (l.msg || "").length > 200 ? (l.msg || "").substring(0, 200) + "..." : (l.msg || "")
             })));
@@ -779,6 +814,7 @@ app.get('/api/functions/:id/logs', cors(), authenticate, async (req, res) => {
                 timestamp: item.timestamp?.S,
                 status: item.status?.S,
                 duration: item.duration?.N ? parseInt(item.duration.N) : 0,
+                handlerDurationMs: item.handlerDurationMs?.N ? parseFloat(item.handlerDurationMs.N) : null,
                 memory: item.memoryMb?.N ? parseInt(item.memoryMb.N) : 0,
                 message: rawMsg.length > 200 ? rawMsg.substring(0, 200) + "..." : rawMsg
             };

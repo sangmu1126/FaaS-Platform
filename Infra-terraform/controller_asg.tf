@@ -159,7 +159,7 @@ resource "aws_autoscaling_group" "controller" {
 
   launch_template {
     id      = aws_launch_template.controller.id
-    version = "$Latest"
+    version = aws_launch_template.controller.latest_version
   }
 
   health_check_type         = "EC2"
