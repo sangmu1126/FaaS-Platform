@@ -377,11 +377,17 @@ sequenceDiagram
 | Worker heartbeat | 1 healthy Worker |
 | Controller/Worker refresh | 각 100% successful |
 | Worker tests | 11개 통과 |
-| Python cold execution | `SUCCESS`, exit 0, 1,402ms |
-| Python warm execution | `SUCCESS`, exit 0, 743ms |
+| Python cold execution | `SUCCESS`, exit 0, Worker 보고 `durationMs: 1,402` |
+| Python warm execution | `SUCCESS`, exit 0, Worker 보고 `durationMs: 743` |
 | Runtime file injection | `runner.py`, `sdk.py`, `main.py` readable |
 | CloudWatch custom metric | `PeakMemoryBytes`, function/runtime dimension 확인 |
 | Worker AMI rollout | LT v2, instance refresh 100% successful |
+
+여기서 `durationMs`는 외부 부하 도구로 측정한 client end-to-end latency가 아니다.
+Worker의 `Executor.run()`이 처리 시작 시각부터 컨테이너 획득, workspace 준비와 파일
+주입, 사용자 함수 실행, 실행 직후 resource metric 조회까지 측정해 응답에 넣은
+wall-clock 값이다. Controller 왕복 네트워크, SQS에서 task가 선택되기 전 대기,
+Redis를 통한 결과 반환 등 전체 사용자 체감 구간은 별도로 측정하지 않았다.
 
 ## 6. 커밋 구성
 
