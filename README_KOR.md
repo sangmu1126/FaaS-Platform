@@ -244,7 +244,7 @@ Worker AMI:
 
 ```bash
 cd Infra-packer
-packer init .
+packer init worker-ami.pkr.hcl
 packer build worker-ami.pkr.hcl
 ```
 
@@ -252,7 +252,7 @@ Controller AMI:
 
 ```bash
 cd Infra-packer
-packer init .
+packer init controller-ami.pkr.hcl
 packer build controller-ami.pkr.hcl
 ```
 

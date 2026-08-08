@@ -11,7 +11,7 @@ Automated AMI creation for FaaS Worker nodes using **HashiCorp Packer**.
 
 ### 1. Initialize Packer
 ```bash
-packer init .
+packer init worker-ami.pkr.hcl
 ```
 
 ### 2. Build AMI
