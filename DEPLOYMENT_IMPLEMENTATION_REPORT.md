@@ -1,6 +1,6 @@
 # FaaS Platform 구현 및 배포 보고서
 
-> 기준 시점: 2026-08-07 · 대상 리전: `ap-northeast-2`
+> 기준 시점: 2026-08-08 · 대상 리전: `ap-northeast-2`
 
 이 문서는 프로젝트를 실제로 읽고 검증하면서 수행한 보안·신뢰성 개선, Packer
 AMI 제작, Terraform 배포, 장애 진단과 수정 결과를 기록한다. 단순 작업 목록보다
@@ -15,19 +15,29 @@ managed resource는 56개이며, data source 5개를 포함한 state address는 
 
 | 항목 | 배포 결과 |
 |---|---|
-| Controller API | `http://54.180.209.176:8080` |
+| Controller API | `http://43.203.18.61:8080` |
 | API discovery | `GET /` 정상 JSON 응답 |
 | Health check | `GET /health` → `status: OK`, `version: v2.8` |
 | Controller AMI | `ami-0cc3fec1ee21ebb52` |
-| Worker AMI | `ami-0e09da8ee6e8f8d32` |
+| Worker AMI | `ami-0c82a5d8c3c7e283e` |
 | Controller ASG | 1대, EIP 자동 연결, rolling refresh 구성 |
 | Worker ASG | 1–10대, SQS backlog 기반 확장, rolling refresh 구성 |
-| Worker 상태 | 1대 healthy, heartbeat 및 runtime pool 확인 |
+| Worker 상태 | 1대 healthy, LT v2, heartbeat 및 runtime pool 확인 |
 | Terraform | 56 managed resources, 61 state addresses, no drift |
 
 `/` 주소는 Dashboard가 아니라 Controller API의 discovery endpoint다. 보호된 API는
 `x-api-key` 헤더가 필요하며, 브라우저 사용자는 별도로 배포한 BFF와 Dashboard를
 통해 접근해야 한다.
+
+### 이번 수정 요약
+
+| 왜 | 무엇을 | 어떻게 | 확인 결과 |
+|---|---|---|---|
+| 업로드 성공 후에도 `runner.py`를 찾지 못함 | Worker 파일 주입과 실행 전 검증 | tmpfs 외부 staging 후 container namespace 내부 복사 | cold/warm 모두 `SUCCESS` |
+| 실패한 실행 환경이 warm pool에 남을 수 있음 | 컨테이너 재사용 정책 | 주입·검증·실행 실패 시 즉시 폐기 | 실패 경로 단위 테스트 통과 |
+| 실행 metric 전송이 IAM에서 거부됨 | Worker role 권한 | `FaaS/FunctionRunner`에만 `PutMetricData` 허용 | `PeakMemoryBytes` 생성 확인 |
+| 새 AMI가 기존 인스턴스를 자동 교체하지 않음 | ASG Launch Template 참조 | `$Latest` 대신 concrete latest version 사용 | rolling refresh 100% 성공 |
+| `packer init .`가 template 변수 충돌로 실패 | Packer 실행 문서 | Worker/Controller HCL별로 init | 두 template validate 통과 |
 
 ## 2. 현재 아키텍처
 
@@ -84,8 +94,9 @@ React/BFF 코드는 저장소에 있지만 현재 Terraform 배포 범위에는 
 강화했다.
 
 **어떻게:** UID/GID 65534, capability 제거, `no-new-privileges`, PID 제한,
-read-only 성격의 workspace/output tmpfs, archive 기반 코드 주입, Cgroup v2 직접
-계측을 적용했다. 관련 핵심 커밋은 `c8a084af`다.
+read-only root filesystem, workspace/output tmpfs, container namespace 내부 파일
+주입, Cgroup v2 직접 계측을 적용했다. tmpfs 파일 주입의 세부 보완은 3.10에
+기록했다. 관련 핵심 커밋은 `c8a084af`, `d64b0bf2`, `723595a4`다.
 
 ### 3.2 Controller 인증과 실행 회계
 
@@ -193,6 +204,74 @@ rolling refresh를 사용한다. 관련 커밋은 `fec12063`, `8ebde448`다.
 JSON으로 반환한다. 현재 인스턴스에 즉시 반영한 뒤 새 Controller AMI를 만들어
 ASG 교체 후에도 같은 응답을 확인했다. 관련 커밋은 `75c3ba86`다.
 
+### 3.10 Worker tmpfs 파일 주입 장애
+
+**왜:** 함수 업로드와 task 전달은 성공했지만 실행 결과가
+`python: can't open file '/workspace/runner.py'`로 실패했다. Worker 로그에는 파일
+3개를 주입했다고 기록됐으므로, 성공 여부만 확인하는 기존 로직으로는 실제 실행
+공간에 파일이 보이는지 보장할 수 없었다.
+
+**무엇을:** 컨테이너 파일 주입 경로, 실행 전 검증, 실패 컨테이너의 재사용 정책을
+수정했다. Worker가 CloudWatch custom metric을 전송할 수 있도록 IAM 권한도
+`FaaS/FunctionRunner` namespace로 제한해 추가했다.
+
+**어떻게:** Docker `put_archive('/workspace', ...)`는 성공을 반환했지만
+`/workspace`가 tmpfs mount라 archive가 기록된 container lower layer를 가렸다.
+따라서 archive를 먼저 일반 root filesystem의 `/tmp/faas-archive-staging`에 풀고,
+컨테이너 namespace 안에서 비특권 사용자로 `cp -R`하여 tmpfs에 기록한다. 이후
+`runner.py`, `sdk.py`, `main.py`를 실제로 읽을 수 있는지 검사하며, 어느 단계든
+실패한 컨테이너는 warm pool로 반환하지 않고 폐기한다.
+
+```mermaid
+flowchart LR
+    subgraph Before["Before: success response, missing files"]
+        A1[Host tar archive] -->|put_archive /workspace| L[Container lower layer]
+        T["tmpfs mounted at /workspace"] -. masks .-> L
+        L --> F1["runner.py not visible"]
+        F1 --> E1[Execution failed]
+    end
+
+    subgraph After["After: namespace-aware injection"]
+        A2[Host tar archive] -->|put_archive| S["/tmp/faas-archive-staging"]
+        S -->|"exec as UID/GID 65534: cp -R"| W["/workspace tmpfs"]
+        W --> V{"runner.py · sdk.py · main.py readable?"}
+        V -- Yes --> E2[Execute and recycle]
+        V -- No --> D[Discard container]
+    end
+```
+
+관련 커밋은 `d64b0bf2`, `723595a4`, `666f2ac0`다. Worker 단위 테스트 11개와
+실제 Python 함수의 cold/warm 실행을 통과했고, 같은 function dimension의
+CloudWatch `PeakMemoryBytes` metric 생성을 확인했다.
+
+### 3.11 AMI 변경의 자동 롤링 배포
+
+**왜:** 새 AMI로 Launch Template version 2가 생성돼도 ASG 설정이 문자열
+`$Latest`를 계속 참조하면 Terraform diff에는 Launch Template 변경만 나타나고
+instance refresh가 시작되지 않았다. 즉 설정은 최신 이미지를 가리키지만 실행 중인
+인스턴스는 이전 이미지에 남을 수 있었다.
+
+**무엇을:** Worker ASG가 Launch Template의 구체적인 최신 version 값을 참조하도록
+변경했다.
+
+**어떻게:** `version = aws_launch_template.worker.latest_version`으로 의존성을
+명시했다. 이후 AMI 변경은 `AMI → Launch Template version → ASG diff → rolling
+refresh`로 전파된다. 이번 배포에서는 refresh
+`be9bd915-d6dd-47d3-9dcb-2c784a155a83`가 100% 성공했고 새 Worker가 version 2로
+InService 상태가 됐다. 관련 커밋은 `b081bc09`다.
+
+```mermaid
+flowchart LR
+    Code[Fixed Worker source] --> Packer[Packer build]
+    Packer --> AMI["Worker AMI\nami-0c82a5d8c3c7e283e"]
+    AMI --> Data[Terraform latest self-owned AMI lookup]
+    Data --> LT[Launch Template version 2]
+    LT --> ASG[ASG version diff]
+    ASG --> Roll[Rolling instance refresh]
+    Roll --> Heartbeat[Healthy Worker heartbeat]
+    Heartbeat --> E2E[Cold and warm E2E]
+```
+
 ## 4. 배포 중 발견한 문제와 해결 흐름
 
 ```mermaid
@@ -215,8 +294,18 @@ flowchart TD
     EIPFail -- No --> HeartbeatFail{Worker heartbeat stale?}
     HeartbeatFail -- Yes --> Rediscover[Refresh Controller IP from SSM]
     Rediscover --> WorkerRefresh[Worker AMI and rolling refresh]
-    HeartbeatFail -- No --> Verify[Final verification]
-    WorkerRefresh --> Verify
+    HeartbeatFail -- No --> InjectFail{Runtime files visible?}
+    WorkerRefresh --> InjectFail
+    InjectFail -- No --> Stage[Stage archive outside tmpfs]
+    Stage --> Copy[Copy inside container namespace]
+    Copy --> Validate[Validate required files]
+    Validate --> AMIBuild[Build new Worker AMI]
+    InjectFail -- Yes --> AMIBuild
+    AMIBuild --> VersionFail{ASG refresh started?}
+    VersionFail -- No --> PinVersion[Reference concrete LT version]
+    PinVersion --> Rollout[Rolling instance refresh]
+    VersionFail -- Yes --> Rollout
+    Rollout --> Verify[Cold/warm execution and final plan]
 ```
 
 | 증상 | 원인 | 해결 | 검증 |
@@ -229,6 +318,9 @@ flowchart TD
 | Controller cloud-init 실패 | `$HOME` 없는 root에서 global git config | baked app 우선, `npm ci` | cloud-init `done`, PM2 online |
 | Worker heartbeat 실패 | 교체 전 private IP 고정 | SSM endpoint 재조회 | Worker registry healthy |
 | `Cannot GET /` | Express root route 부재 | discovery route 추가 | 새 AMI 교체 후 JSON 응답 |
+| `/workspace/runner.py` 없음 | archive가 tmpfs 아래 lower layer에 기록됨 | staging 후 namespace 내부 복사 | cold/warm 함수 `SUCCESS` |
+| CloudWatch `AccessDenied` | Worker role에 custom metric 권한 없음 | namespace 제한 `PutMetricData` 허용 | `PeakMemoryBytes` 조회 성공 |
+| 새 AMI인데 기존 Worker 유지 | ASG가 문자열 `$Latest`를 참조 | 구체적인 LT version 참조 | instance refresh 100% 성공 |
 
 ## 5. 최종 검증
 
@@ -240,6 +332,9 @@ sequenceDiagram
     participant SSM
     participant Worker
     participant Redis
+    participant S3
+    participant SQS
+    participant CloudWatch
 
     Operator->>EIP: GET /
     EIP->>Controller: HTTP :8080
@@ -253,6 +348,17 @@ sequenceDiagram
     Controller-->>Worker: 200 OK
     Operator->>Controller: GET /api/workers + x-api-key
     Controller-->>Operator: 1 healthy Worker
+    Operator->>Controller: POST /upload (Python zip)
+    Controller->>S3: Store function package
+    Operator->>Controller: POST /run (cold, then warm)
+    Controller->>SQS: Enqueue task
+    Worker->>SQS: Long-poll task
+    Worker->>S3: Download function package
+    Worker->>Worker: Stage → tmpfs copy → file validation
+    Worker->>Worker: Execute in warm container
+    Worker->>Redis: Publish execution result
+    Worker->>CloudWatch: Put PeakMemoryBytes
+    Controller-->>Operator: SUCCESS result
 ```
 
 | 검증 | 결과 |
@@ -270,6 +376,12 @@ sequenceDiagram
 | Redis/SQS Worker 연결 | 연결 및 polling 확인 |
 | Worker heartbeat | 1 healthy Worker |
 | Controller/Worker refresh | 각 100% successful |
+| Worker tests | 11개 통과 |
+| Python cold execution | `SUCCESS`, exit 0, 1,402ms |
+| Python warm execution | `SUCCESS`, exit 0, 743ms |
+| Runtime file injection | `runner.py`, `sdk.py`, `main.py` readable |
+| CloudWatch custom metric | `PeakMemoryBytes`, function/runtime dimension 확인 |
+| Worker AMI rollout | LT v2, instance refresh 100% successful |
 
 ## 6. 커밋 구성
 
@@ -292,14 +404,19 @@ sequenceDiagram
 | `d28b11d9` | Worker의 Controller endpoint 자동 갱신 |
 | `9e9b1d4e` | Worker rolling refresh 구성 |
 | `75c3ba86` | Controller root discovery endpoint 추가 |
+| `d64b0bf2` | Worker 파일 주입 검증과 실패 컨테이너 폐기 |
+| `666f2ac0` | Worker CloudWatch custom metric IAM 권한 추가 |
+| `723595a4` | tmpfs 외부 staging 후 namespace 내부 파일 복사 |
+| `b081bc09` | Launch Template version 변경 시 Worker rolling refresh 보장 |
+| `4ceee2b3` | Worker/Controller별 Packer 초기화 명령 수정 |
 
 ## 7. 운영 방법
 
 ### 상태 확인
 
 ```bash
-curl http://54.180.209.176:8080/
-curl http://54.180.209.176:8080/health
+curl http://43.203.18.61:8080/
+curl http://43.203.18.61:8080/health
 
 cd Infra-terraform
 terraform plan -detailed-exitcode
@@ -312,8 +429,10 @@ terraform plan -detailed-exitcode
 
 ```bash
 cd Infra-packer
+packer init worker-ami.pkr.hcl
 packer validate worker-ami.pkr.hcl
 packer build worker-ami.pkr.hcl
+packer init controller-ami.pkr.hcl
 packer validate controller-ami.pkr.hcl
 packer build controller-ami.pkr.hcl
 
