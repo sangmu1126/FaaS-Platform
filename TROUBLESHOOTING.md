@@ -107,12 +107,15 @@ with open(temp_tar, "wb") as f:
 ### 🛑 1. The Bottleneck Hunt (탐색)
 Warm Container를 적용했음에도 `t3.micro`에서 1초 이상의 지연이 발생했습니다. 원인 분석을 위해 각 구간별 시간을 측정했습니다.
 
-1.  **Code Execution**: 30ms (순수 실행 시간)
+1.  **Code/Runtime Segment**: 30ms (과거 구간 측정값이며 handler-only 시간은 아님)
 2.  **S3 Upload**: 500ms (Network I/O)
 3.  **CloudWatch**: 200ms (Network I/O)
 4.  **Memory Check**: 1000ms (Docker API)
 
 **결론:** "코드는 빠른데, **기록(Reporting)**하고 **감시(Monitoring)**하느라 배보다 배꼽이 더 크다."
+
+> 현재 구현은 `handlerDurationMs`(사용자 handler만), `durationMs`(Worker 내부 처리),
+> Client E2E를 별도로 계측한다. 위 30ms를 현재 handler-only 성능으로 인용하지 않는다.
 
 ### 💡 2. Solution A: Fire-and-Forget (비동기 보고)
 사용자가 결과를 받기 위해 서버가 로그를 업로드하는 것까지 기다릴 필요는 없습니다.
@@ -358,4 +361,3 @@ aws ec2 create-image --instance-id <BUILDER_ID> --name "faas-worker" --no-reboot
 
 ### ✅ 결론 (Verdict)
 60ms의 지연 시간 증가는 **프로덕션 레벨의 보안(Security)과 확장성(Scalability)**을 얻기 위한 필수적인 Trade-off로 판단됩니다. 실제 코드 실행이나 폴링 주기(Polling Interval)에는 영향이 없음을 확인했습니다.
-

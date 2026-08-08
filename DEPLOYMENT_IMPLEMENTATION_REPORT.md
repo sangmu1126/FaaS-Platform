@@ -18,11 +18,11 @@ managed resource는 56개이며, data source 5개를 포함한 state address는 
 | Controller API | `http://43.203.18.61:8080` |
 | API discovery | `GET /` 정상 JSON 응답 |
 | Health check | `GET /health` → `status: OK`, `version: v2.8` |
-| Controller AMI | `ami-0cc3fec1ee21ebb52` |
-| Worker AMI | `ami-0c82a5d8c3c7e283e` |
+| Controller AMI | `ami-0dcd18322b835984c` |
+| Worker AMI | `ami-0543c61581143bcfb` |
 | Controller ASG | 1대, EIP 자동 연결, rolling refresh 구성 |
 | Worker ASG | 1–10대, SQS backlog 기반 확장, rolling refresh 구성 |
-| Worker 상태 | 1대 healthy, LT v2, heartbeat 및 runtime pool 확인 |
+| Worker 상태 | 1대 healthy, LT v3, heartbeat 및 runtime pool 확인 |
 | Terraform | 56 managed resources, 61 state addresses, no drift |
 
 `/` 주소는 Dashboard가 아니라 Controller API의 discovery endpoint다. 보호된 API는
@@ -38,6 +38,7 @@ managed resource는 56개이며, data source 5개를 포함한 state address는 
 | 실행 metric 전송이 IAM에서 거부됨 | Worker role 권한 | `FaaS/FunctionRunner`에만 `PutMetricData` 허용 | `PeakMemoryBytes` 생성 확인 |
 | 새 AMI가 기존 인스턴스를 자동 교체하지 않음 | ASG Launch Template 참조 | `$Latest` 대신 concrete latest version 사용 | rolling refresh 100% 성공 |
 | `packer init .`가 template 변수 충돌로 실패 | Packer 실행 문서 | Worker/Controller HCL별로 init | 두 template validate 통과 |
+| UI 시간이 handler 실행시간처럼 보임 | 실행 단계별 시간 의미 분리 | `handlerDurationMs`, Worker time, Client E2E 개별 계측 | 0ms/150ms control 오차 범위 확인 |
 
 ## 2. 현재 아키텍처
 
@@ -263,7 +264,7 @@ InService 상태가 됐다. 관련 커밋은 `b081bc09`다.
 ```mermaid
 flowchart LR
     Code[Fixed Worker source] --> Packer[Packer build]
-    Packer --> AMI["Worker AMI\nami-0c82a5d8c3c7e283e"]
+    Packer --> AMI["Worker AMI\nami-0543c61581143bcfb"]
     AMI --> Data[Terraform latest self-owned AMI lookup]
     Data --> LT[Launch Template version 2]
     LT --> ASG[ASG version diff]
@@ -271,6 +272,51 @@ flowchart LR
     Roll --> Heartbeat[Healthy Worker heartbeat]
     Heartbeat --> E2E[Cold and warm E2E]
 ```
+
+### 3.12 사용자 handler 순수 실행시간 계측
+
+**왜:** 기존 `durationMs`는 Worker가 task 처리를 시작한 시점부터 컨테이너 획득,
+파일 주입, Docker exec, 함수 실행과 resource metric 조회까지 포함한다. UI가 이를
+`Response Time`으로 표시해 사용자 handler의 순수 실행시간이나 client end-to-end
+latency로 오해할 수 있었다.
+
+**무엇을:** 한 번의 실행에서 서로 다른 세 시간축을 분리했다.
+
+| 필드 | 측정 위치 | 포함 범위 |
+|---|---|---|
+| `handlerDurationMs` | Python `runner.py` | `handler(event, context)` 호출만 |
+| `durationMs` | Worker `Executor.run()` | Worker orchestration과 함수 실행 |
+| Client E2E | React test client | BFF/Controller/SQS/Worker 왕복 전체 |
+
+**어떻게:** `runner.py`가 `perf_counter_ns()`로 handler 호출 전후를 측정하고
+platform 전용 JSON 파일에 nanosecond 값을 기록한다. `/output`도 tmpfs이므로
+Worker는 container namespace 안에서 결과를 일반 root filesystem staging 경로로
+복사한 후 Docker archive API로 회수한다. 예약 파일은 `handlerDurationMs`로 변환한
+직후 삭제해 사용자 output 목록과 S3 upload에는 포함하지 않는다. Controller는
+실행 log와 `function_handler_duration_seconds` Prometheus histogram에 별도로
+저장하고, UI는 Handler Time, Worker Processing, Client E2E를 각각 표시한다.
+
+```mermaid
+flowchart LR
+    ClientStart[Client timer start] --> Queue[Controller and SQS]
+    Queue --> WorkerStart[Worker duration start]
+    WorkerStart --> Prepare[Container acquire and file injection]
+    Prepare --> HandlerStart[perf_counter_ns start]
+    HandlerStart --> Handler[User handler]
+    Handler --> HandlerEnd[perf_counter_ns end]
+    HandlerEnd --> Metrics[Worker resource metrics]
+    Metrics --> WorkerEnd[Worker duration end]
+    WorkerEnd --> Result[Redis and Controller result]
+    Result --> ClientEnd[Client timer end]
+
+    HandlerStart -. handlerDurationMs .-> HandlerEnd
+    WorkerStart -. durationMs .-> WorkerEnd
+    ClientStart -. Client E2E .-> ClientEnd
+```
+
+계측 자체를 검증하기 위해 같은 함수에 0ms와 150ms의 의도적 delay를 주었다. 0ms
+handler는 `0.002–0.004ms`, 150ms handler는 `150.211–150.256ms`로 보고돼 timer가
+Worker orchestration 시간이 아니라 handler 구간만 측정함을 확인했다.
 
 ## 4. 배포 중 발견한 문제와 해결 흐름
 
@@ -376,12 +422,15 @@ sequenceDiagram
 | Redis/SQS Worker 연결 | 연결 및 polling 확인 |
 | Worker heartbeat | 1 healthy Worker |
 | Controller/Worker refresh | 각 100% successful |
-| Worker tests | 11개 통과 |
+| Worker tests | 15개 통과 |
 | Python cold execution | `SUCCESS`, exit 0, Worker 보고 `durationMs: 1,402` |
 | Python warm execution | `SUCCESS`, exit 0, Worker 보고 `durationMs: 743` |
 | Runtime file injection | `runner.py`, `sdk.py`, `main.py` readable |
 | CloudWatch custom metric | `PeakMemoryBytes`, function/runtime dimension 확인 |
-| Worker AMI rollout | LT v2, instance refresh 100% successful |
+| Worker AMI rollout | LT v3, instance refresh 검증 완료 |
+| Controller AMI rollout | LT v2, instance refresh 100% successful |
+| Handler timer, 0ms control | `0.002–0.004ms` |
+| Handler timer, 150ms control | `150.211–150.256ms` |
 
 여기서 `durationMs`는 외부 부하 도구로 측정한 client end-to-end latency가 아니다.
 Worker의 `Executor.run()`이 처리 시작 시각부터 컨테이너 획득, workspace 준비와 파일
@@ -415,6 +464,9 @@ Redis를 통한 결과 반환 등 전체 사용자 체감 구간은 별도로 �
 | `723595a4` | tmpfs 외부 staging 후 namespace 내부 파일 복사 |
 | `b081bc09` | Launch Template version 변경 시 Worker rolling refresh 보장 |
 | `4ceee2b3` | Worker/Controller별 Packer 초기화 명령 수정 |
+| `7723c9f6` | 순수 handler 계측과 tmpfs output 회수 구현 |
+| `0fa510c5` | Controller handler metric 저장·집계와 rolling refresh 보장 |
+| `295d5db8` | UI에서 Handler/Worker/Client E2E 시간 분리 |
 
 ## 7. 운영 방법
 
