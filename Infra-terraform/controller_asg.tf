@@ -39,6 +39,11 @@ resource "aws_launch_template" "controller" {
     redis_host        = aws_elasticache_cluster.redis.cache_nodes[0].address
     infra_api_key     = random_password.infra_api_key.result
     eip_allocation_id = aws_eip.controller_asg_eip.id
+    bff_bucket_name   = aws_s3_bucket.code_bucket.id
+    bff_object_key    = aws_s3_object.bff_package.key
+    bff_package_hash  = aws_s3_object.bff_package.source_hash
+    bff_users_table   = aws_dynamodb_table.bff_users.name
+    bff_auth_secret   = random_password.bff_auth_token_secret.result
   }))
 
   tag_specifications {
@@ -109,6 +114,14 @@ resource "aws_iam_role_policy" "controller_policy" {
           aws_dynamodb_table.metadata_table.arn,
           aws_dynamodb_table.logs_table.arn
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem"
+        ]
+        Resource = aws_dynamodb_table.bff_users.arn
       },
       {
         Effect   = "Allow"

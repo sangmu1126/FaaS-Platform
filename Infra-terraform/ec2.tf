@@ -65,6 +65,14 @@ resource "aws_security_group" "controller_sg" {
     cidr_blocks = ["10.0.10.0/24", "10.0.11.0/24"] # Private subnets
   }
 
+  ingress {
+    description     = "BFF traffic from the public ALB"
+    from_port       = 3001
+    to_port         = 3001
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bff_alb.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

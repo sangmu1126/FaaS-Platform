@@ -6,6 +6,8 @@ set -e  # Exit on error
 
 GITHUB_REPO="https://github.com/sangmu1126/Infra-controller.git"
 APP_DIR="/home/ec2-user/faas-controller"
+BFF_DIR="/home/ec2-user/faas-bff"
+BFF_ARCHIVE="/tmp/faas-bff.zip"
 
 # 1. Associate Elastic IP (Critical for external access)
 IMDS_TOKEN=$(curl -fsS -X PUT \
@@ -77,3 +79,32 @@ fi
 
 # 9. CloudWatch Agent (if installed)
 # Already configured via AMI or separate setup
+
+# 10. Deploy the dashboard BFF package uploaded by scripts/deploy.sh.
+# Package content hash: ${bff_package_hash}
+if ! command -v unzip &> /dev/null; then
+    dnf install -y unzip
+fi
+
+aws s3 cp "s3://${bff_bucket_name}/${bff_object_key}" "$BFF_ARCHIVE" --region ${aws_region}
+mkdir -p "$BFF_DIR"
+find "$BFF_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+unzip -q "$BFF_ARCHIVE" -d "$BFF_DIR"
+chown -R ec2-user:ec2-user "$BFF_DIR"
+
+cat <<EOF > "$BFF_DIR/.env"
+PORT=3001
+AWS_REGION=${aws_region}
+AWS_CONTROLLER_URL=http://127.0.0.1:8080
+INFRA_API_KEY=${infra_api_key}
+AUTH_TOKEN_SECRET=${bff_auth_secret}
+AUTH_USERS_TABLE=${bff_users_table}
+EOF
+chown ec2-user:ec2-user "$BFF_DIR/.env"
+
+if su - ec2-user -c "pm2 list | grep -q faas-bff"; then
+    su - ec2-user -c "cd $BFF_DIR && pm2 restart faas-bff --update-env"
+else
+    su - ec2-user -c "cd $BFF_DIR && pm2 start src/server.js --name faas-bff"
+    su - ec2-user -c "pm2 save"
+fi
