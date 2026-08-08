@@ -229,10 +229,29 @@ class ContainerManager:
             else:
                 tar.add(source_path, arcname=source_path.name)
 
+        # Docker's archive API writes to the container root filesystem rather
+        # than through a tmpfs mount. Stage the archive in /tmp, then copy it
+        # into the mounted workspace from inside the container namespace.
+        staging_path = "/tmp/faas-archive-staging"
+        container.exec_run(["rm", "-rf", staging_path], user="0")
+        container.exec_run(["mkdir", "-p", staging_path], user="0")
         container.exec_run(["mkdir", "-p", target_path], user="0")
-        copied = container.put_archive(target_path, stream.getvalue())
+        copied = container.put_archive(staging_path, stream.getvalue())
         if not copied:
-            raise RuntimeError(f"Docker rejected archive copy to {target_path}")
+            raise RuntimeError(f"Docker rejected archive copy for {target_path}")
+
+        copy_command = [
+            "sh",
+            "-c",
+            f"cp -R {shlex.quote(staging_path)}/. {shlex.quote(target_path)}/"
+        ]
+        result = container.exec_run(copy_command, user="65534:65534")
+        exit_code = getattr(result, "exit_code", result[0] if isinstance(result, tuple) else -1)
+        container.exec_run(["rm", "-rf", staging_path], user="0")
+        if exit_code != 0:
+            output = getattr(result, "output", result[1] if isinstance(result, tuple) else b"")
+            detail = output.decode("utf-8", errors="replace").strip() if isinstance(output, bytes) else str(output)
+            raise RuntimeError(f"Failed to copy staged files to {target_path}: {detail}")
 
     def verify_files_readable(self, container, file_paths: List[str], user: str = "65534:65534"):
         """Fail if any required runtime file is missing or unreadable in a container."""

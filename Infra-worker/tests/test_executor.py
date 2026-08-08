@@ -177,6 +177,7 @@ class TestContainerArchiveCopy(unittest.TestCase):
         self.manager = ContainerManager.__new__(ContainerManager)
         self.container = MagicMock()
         self.container.put_archive.return_value = True
+        self.container.exec_run.return_value = MagicMock(exit_code=0, output=b"")
 
     def test_copy_uses_flat_archive_and_checks_docker_result(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -187,7 +188,7 @@ class TestContainerArchiveCopy(unittest.TestCase):
             self.manager.copy_to_container(self.container, source, "/workspace")
 
         target, payload = self.container.put_archive.call_args.args
-        self.assertEqual(target, "/workspace")
+        self.assertEqual(target, "/tmp/faas-archive-staging")
         self.assertIsInstance(payload, bytes)
         with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
             self.assertEqual(sorted(archive.getnames()), ["main.py", "runner.py"])
