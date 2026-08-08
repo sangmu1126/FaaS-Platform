@@ -1,5 +1,7 @@
 # 고성능 FaaS 플랫폼
 
+![FaaS Platform 대시보드](./docs/assets/faas-platform-dashboard.png)
+
 **한국어** | [English](./README.md)
 
 AWS EC2, Docker, SQS, Redis, S3, DynamoDB로 구성한 커스텀 FaaS

@@ -1,5 +1,7 @@
 # High-Performance FaaS Platform
 
+![FaaS Platform dashboard](./docs/assets/faas-platform-dashboard.png)
+
 [Korean](./README_KOR.md) | **English**
 
 A custom FaaS (Function as a Service) platform built with AWS EC2, Docker, SQS,
