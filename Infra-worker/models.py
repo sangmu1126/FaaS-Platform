@@ -25,6 +25,7 @@ class ExecutionResult:
     stdout: str
     stderr: str
     duration_ms: int
+    handler_duration_ms: Optional[float] = None
     worker_id: str = "unknown"
     peak_memory_bytes: Optional[int] = None
     allocated_memory_mb: Optional[int] = None
@@ -49,6 +50,7 @@ class ExecutionResult:
             "stdout": self.stdout,
             "stderr": self.stderr,
             "durationMs": self.duration_ms,
+            "handlerDurationMs": self.handler_duration_ms,
             "peakMemoryBytes": self.peak_memory_bytes,
             "allocatedMemoryMb": self.allocated_memory_mb,
             "optimizationTip": self.optimization_tip,

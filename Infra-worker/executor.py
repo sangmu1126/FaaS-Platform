@@ -160,6 +160,10 @@ class TaskExecutor:
             
             # Retrieve Output Files
             self.containers.copy_from_container(container, "/output", host_output_dir)
+
+            # Runtime metrics are platform metadata, not user output. Read and
+            # remove the reserved file before output upload/listing.
+            handler_duration_ms = self._read_handler_duration(host_output_dir)
             
             # Extract LLM Usage
             llm_tokens = self._read_llm_usage(host_output_dir)
@@ -179,6 +183,7 @@ class TaskExecutor:
                 stdout=output_str,
                 stderr="",
                 duration_ms=duration_ms,
+                handler_duration_ms=handler_duration_ms,
                 worker_id=socket.gethostname(),
                 peak_memory_bytes=peak_memory,
                 allocated_memory_mb=task.memory_mb,
@@ -335,6 +340,29 @@ class TaskExecutor:
             result["output"] = b""
 
         return result["exit_code"], result["output"]
+
+    def _read_handler_duration(self, output_dir: Path):
+        candidates = [
+            output_dir / "output" / ".faas_runtime_metrics.json",
+            output_dir / ".faas_runtime_metrics.json",
+        ]
+        metrics_file = next((path for path in candidates if path.exists()), None)
+        if metrics_file is None:
+            return None
+
+        try:
+            with open(metrics_file, "r") as file_obj:
+                duration_ns = int(json.load(file_obj)["handlerDurationNs"])
+            if duration_ns < 0:
+                return None
+            return round(duration_ns / 1_000_000, 3)
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            return None
+        finally:
+            try:
+                metrics_file.unlink()
+            except OSError:
+                pass
 
     def _read_llm_usage(self, output_dir: Path) -> int:
         usage_file = output_dir / ".llm_usage_stats.jsonl"

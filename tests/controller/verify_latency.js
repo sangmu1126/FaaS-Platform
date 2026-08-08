@@ -50,6 +50,8 @@ async function runRequest(id, label) {
 
         return {
             duration,
+            workerDuration: data.durationMs ?? null,
+            handlerDuration: data.handlerDurationMs ?? null,
             status: "OK",
             worker: data.workerId,
             coldStart: duration > 500 // Threshold assumption
@@ -83,14 +85,18 @@ async function main() {
     // 2. Warm Starts
     console.log(`\n🔥 invoking ${WARM_ITERATIONS} Warm Starts...`);
     const warmTimes = [];
+    const warmWorkerTimes = [];
+    const warmHandlerTimes = [];
 
     for (let i = 0; i < WARM_ITERATIONS; i++) {
         const res = await runRequest(functionId, `Warm-${i}`);
         if (res.status === "OK") {
             warmTimes.push(res.duration);
+            if (res.workerDuration !== null) warmWorkerTimes.push(res.workerDuration);
+            if (res.handlerDuration !== null) warmHandlerTimes.push(res.handlerDuration);
             process.stdout.write("."); // Progress bar
         } else {
-            PROCESS.stdout.write("x");
+            process.stdout.write("x");
         }
     }
     console.log("\n");
@@ -102,6 +108,12 @@ async function main() {
     }
 
     const warmAvg = warmTimes.reduce((a, b) => a + b, 0) / warmTimes.length;
+    const warmWorkerAvg = warmWorkerTimes.length > 0
+        ? warmWorkerTimes.reduce((a, b) => a + b, 0) / warmWorkerTimes.length
+        : null;
+    const warmHandlerAvg = warmHandlerTimes.length > 0
+        ? warmHandlerTimes.reduce((a, b) => a + b, 0) / warmHandlerTimes.length
+        : null;
     const warmMin = Math.min(...warmTimes);
     const warmMax = Math.max(...warmTimes);
     const warmP99 = warmTimes.sort((a, b) => a - b)[Math.floor(warmTimes.length * 0.99)];
@@ -113,9 +125,11 @@ async function main() {
 ----------------------------------------------------------------
   metric         | Time (ms)      | Note
 -----------------|----------------|-----------------------------
-  🧊 Cold Start  | ${coldResult.duration.toFixed(2).padStart(8)} ms     | Container Init + Runtime Boot
-  🔥 Warm Avg    | ${warmAvg.toFixed(2).padStart(8)} ms     | Pure Execution (Zero Overhead)
-  🔥 Warm p99    | ${warmP99.toFixed(2).padStart(8)} ms     | Stable Performance
+  🧊 Cold E2E    | ${coldResult.duration.toFixed(2).padStart(8)} ms     | Client to Controller round trip
+  🔥 Warm E2E    | ${warmAvg.toFixed(2).padStart(8)} ms     | Client to Controller round trip
+  🔥 Worker Avg  | ${(warmWorkerAvg === null ? "N/A" : warmWorkerAvg.toFixed(2)).padStart(8)} ms     | Worker orchestration and execution
+  🔥 Handler Avg | ${(warmHandlerAvg === null ? "N/A" : warmHandlerAvg.toFixed(3)).padStart(8)} ms     | User handler only
+  🔥 Warm p99    | ${warmP99.toFixed(2).padStart(8)} ms     | E2E stable performance
 ----------------------------------------------------------------
 
 🎯 Deep Tech Achievement:

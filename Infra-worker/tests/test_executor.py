@@ -13,6 +13,7 @@ import os
 import tempfile
 import io
 import tarfile
+import json
 from unittest.mock import patch
 
 # Add parent directory to path to import modules
@@ -171,6 +172,27 @@ class TestTaskExecutor(unittest.TestCase):
         self.mock_containers.discard_container.assert_called_once_with(mock_container)
         self.mock_containers.release_container.assert_not_called()
 
+    def test_reads_and_removes_handler_duration_metadata(self):
+        output_dir = Path(self.test_dir.name) / "metrics_output"
+        container_output_dir = output_dir / "output"
+        container_output_dir.mkdir(parents=True)
+        metrics_file = container_output_dir / ".faas_runtime_metrics.json"
+        metrics_file.write_text(json.dumps({"handlerDurationNs": 12_345_678}))
+
+        duration_ms = self.executor._read_handler_duration(output_dir)
+
+        self.assertEqual(duration_ms, 12.346)
+        self.assertFalse(metrics_file.exists())
+
+    def test_invalid_handler_duration_metadata_is_removed(self):
+        output_dir = Path(self.test_dir.name) / "invalid_metrics_output"
+        output_dir.mkdir()
+        metrics_file = output_dir / ".faas_runtime_metrics.json"
+        metrics_file.write_text("not-json")
+
+        self.assertIsNone(self.executor._read_handler_duration(output_dir))
+        self.assertFalse(metrics_file.exists())
+
 
 class TestContainerArchiveCopy(unittest.TestCase):
     def setUp(self):
@@ -200,6 +222,29 @@ class TestContainerArchiveCopy(unittest.TestCase):
             (source / "main.py").write_text("pass")
             with self.assertRaisesRegex(RuntimeError, "rejected archive"):
                 self.manager.copy_to_container(self.container, source, "/workspace")
+
+    def test_copy_from_container_stages_tmpfs_output(self):
+        archive_stream = io.BytesIO()
+        with tarfile.open(fileobj=archive_stream, mode="w") as archive:
+            payload = b'{"handlerDurationNs": 150000000}'
+            info = tarfile.TarInfo("output/.faas_runtime_metrics.json")
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+        self.container.get_archive.return_value = ([archive_stream.getvalue()], {})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir)
+            self.manager.copy_from_container(self.container, "/output", target)
+
+            metrics_file = target / "output" / ".faas_runtime_metrics.json"
+            self.assertTrue(metrics_file.exists())
+
+        self.container.get_archive.assert_called_once_with("/tmp/faas-output-staging/output")
+        copy_call = next(
+            call for call in self.container.exec_run.call_args_list
+            if call.kwargs.get("user") == "65534:65534"
+        )
+        self.assertIn("cp -R /output/.", copy_call.args[0][2])
 
 if __name__ == '__main__':
     unittest.main()

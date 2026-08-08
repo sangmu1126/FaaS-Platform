@@ -269,8 +269,25 @@ class ContainerManager:
             raise RuntimeError(f"Required container files are unavailable: {detail or file_paths}")
 
     def copy_from_container(self, container, source_path: str, target_local_path: Path):
+        staging_root = "/tmp/faas-output-staging"
+        staging_path = f"{staging_root}/output"
         try:
-            stream, stat = container.get_archive(source_path)
+            container.exec_run(["rm", "-rf", staging_root], user="0")
+            container.exec_run(["mkdir", "-p", staging_path], user="0")
+            container.exec_run(["chmod", "1777", staging_path], user="0")
+            copy_result = container.exec_run(
+                ["sh", "-c", f"cp -R {shlex.quote(source_path)}/. {staging_path}/"],
+                user="65534:65534"
+            )
+            exit_code = getattr(
+                copy_result,
+                "exit_code",
+                copy_result[0] if isinstance(copy_result, tuple) else -1
+            )
+            if exit_code != 0:
+                raise RuntimeError(f"Failed to stage container output from {source_path}")
+
+            stream, stat = container.get_archive(staging_path)
             temp_tar = target_local_path / "temp_output.tar"
             with open(temp_tar, "wb") as f:
                 for chunk in stream:
@@ -280,6 +297,11 @@ class ContainerManager:
             temp_tar.unlink()
         except Exception as e:
             logger.warning("Failed to copy from container", error=str(e))
+        finally:
+            try:
+                container.exec_run(["rm", "-rf", staging_root], user="0")
+            except Exception:
+                pass
 
     def get_cgroup_cpu_usage(self, container_id: str) -> int:
         """Returns CPU usage in microseconds from cgroup v2"""
