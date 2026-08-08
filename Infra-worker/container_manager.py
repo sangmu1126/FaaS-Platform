@@ -5,6 +5,7 @@ import time
 import os
 import io
 import tarfile
+import shlex
 from collections import deque
 from pathlib import Path
 from typing import Dict, Optional, List
@@ -161,6 +162,14 @@ class ContainerManager:
                 container.remove(force=True)
             except Exception: pass
 
+    def discard_container(self, container):
+        """Remove a container that failed before it became safe to reuse."""
+        try:
+            self.pid_cache.pop(container.id, None)
+            container.remove(force=True)
+        except Exception as e:
+            logger.warning("Failed to discard container", error=str(e))
+
     def _replenish_pool(self, runtime: str):
         def _create():
             try:
@@ -208,12 +217,37 @@ class ContainerManager:
             return 0
 
     def copy_to_container(self, container, source_path: Path, target_path: str):
+        source_path = Path(source_path)
+        if not source_path.exists():
+            raise FileNotFoundError(f"Container copy source does not exist: {source_path}")
+
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode='w') as tar:
-            tar.add(source_path, arcname=".")
-        stream.seek(0)
-        container.exec_run(f"mkdir -p {target_path}")
-        container.put_archive(target_path, stream)
+            if source_path.is_dir():
+                for item in sorted(source_path.iterdir(), key=lambda path: path.name):
+                    tar.add(item, arcname=item.name)
+            else:
+                tar.add(source_path, arcname=source_path.name)
+
+        container.exec_run(["mkdir", "-p", target_path], user="0")
+        copied = container.put_archive(target_path, stream.getvalue())
+        if not copied:
+            raise RuntimeError(f"Docker rejected archive copy to {target_path}")
+
+    def verify_files_readable(self, container, file_paths: List[str], user: str = "65534:65534"):
+        """Fail if any required runtime file is missing or unreadable in a container."""
+        quoted_paths = " ".join(shlex.quote(path) for path in file_paths)
+        command = [
+            "sh",
+            "-c",
+            f'for file in {quoted_paths}; do [ -r "$file" ] || {{ echo "missing:$file"; exit 1; }}; done'
+        ]
+        result = container.exec_run(command, user=user)
+        exit_code = getattr(result, "exit_code", result[0] if isinstance(result, tuple) else -1)
+        if exit_code != 0:
+            output = getattr(result, "output", result[1] if isinstance(result, tuple) else b"")
+            detail = output.decode("utf-8", errors="replace").strip() if isinstance(output, bytes) else str(output)
+            raise RuntimeError(f"Required container files are unavailable: {detail or file_paths}")
 
     def copy_from_container(self, container, source_path: str, target_local_path: Path):
         try:

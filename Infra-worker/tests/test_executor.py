@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 import os
 import tempfile
+import io
+import tarfile
 from unittest.mock import patch
 
 # Add parent directory to path to import modules
@@ -52,11 +54,13 @@ class TestTaskExecutor(unittest.TestCase):
         )
         
         # Set return values for stats to avoid TypeError in math ops
-        self.mock_containers.get_io_bytes.return_value = 0
+        self.mock_containers.get_cgroup_cpu_usage.return_value = 0
+        self.mock_containers.get_network_stats.return_value = (0, 0)
+        self.mock_containers.get_disk_stats.return_value = (0, 0)
         self.mock_containers.get_cgroup_memory_peak.return_value = 1024 * 1024 * 50 # 50MB
         
         # Set return value for metrics analysis
-        self.mock_metrics.analyze_execution.return_value = (None, None)
+        self.mock_metrics.analyze_execution.return_value = (None, None, None)
         
         # Init temp dir
         self.test_dir = tempfile.TemporaryDirectory()
@@ -141,10 +145,60 @@ class TestTaskExecutor(unittest.TestCase):
         
         # Verify Flow
         self.mock_storage.prepare_workspace.assert_not_called() # Warm start skips download
-        # copy_to_container might be called if output dir setup fails? 
-        # In current logic: if not is_warm or use_payload_file: copy_to_container
-        # Here payload is small/empty, so no copy_to_container
-        self.mock_containers.copy_to_container.assert_not_called()
+        # User code remains in the warm container, but trusted system files are
+        # injected and verified on every execution.
+        self.mock_containers.copy_to_container.assert_called_once()
+        self.mock_containers.verify_files_readable.assert_called_once()
+
+    def test_failed_container_setup_discards_container(self):
+        task = TaskMessage(
+            request_id="req-3", function_id="func-1", runtime="python", s3_key="key"
+        )
+        mock_container = MagicMock()
+        mock_container.id = "container-1"
+        mock_container.is_warm = False
+        self.mock_containers.acquire_container.return_value = mock_container
+
+        cold_start_dir = Path(self.test_dir.name) / "failed_req"
+        cold_start_dir.mkdir()
+        self.mock_storage.prepare_workspace.return_value = cold_start_dir
+        self.mock_containers.copy_to_container.side_effect = RuntimeError("archive rejected")
+
+        result = self.executor.run(task)
+
+        self.assertFalse(result.success)
+        self.assertIn("archive rejected", result.stderr)
+        self.mock_containers.discard_container.assert_called_once_with(mock_container)
+        self.mock_containers.release_container.assert_not_called()
+
+
+class TestContainerArchiveCopy(unittest.TestCase):
+    def setUp(self):
+        self.manager = ContainerManager.__new__(ContainerManager)
+        self.container = MagicMock()
+        self.container.put_archive.return_value = True
+
+    def test_copy_uses_flat_archive_and_checks_docker_result(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir)
+            (source / "main.py").write_text("def handler(event, context): return event")
+            (source / "runner.py").write_text("print('runner')")
+
+            self.manager.copy_to_container(self.container, source, "/workspace")
+
+        target, payload = self.container.put_archive.call_args.args
+        self.assertEqual(target, "/workspace")
+        self.assertIsInstance(payload, bytes)
+        with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
+            self.assertEqual(sorted(archive.getnames()), ["main.py", "runner.py"])
+
+    def test_copy_raises_when_docker_rejects_archive(self):
+        self.container.put_archive.return_value = False
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir)
+            (source / "main.py").write_text("pass")
+            with self.assertRaisesRegex(RuntimeError, "rejected archive"):
+                self.manager.copy_to_container(self.container, source, "/workspace")
 
 if __name__ == '__main__':
     unittest.main()

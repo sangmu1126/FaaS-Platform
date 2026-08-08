@@ -52,6 +52,7 @@ class TaskExecutor:
         start_time = time.time()
         container = None
         host_work_dir = None
+        container_reusable = False
         
         acquired = self.metrics.global_limit.acquire(blocking=True, timeout=30)
         if not acquired:
@@ -105,6 +106,17 @@ class TaskExecutor:
             # Inject System Files (Runner, SDK, AI Client) for Python
             if task.runtime == "python":
                 self._inject_system_files(container)
+
+            required_files = {
+                "python": ["/workspace/main.py", "/workspace/runner.py", "/workspace/sdk.py"],
+                "nodejs": ["/workspace/index.js"],
+                "cpp": ["/workspace/main.cpp"],
+                "go": ["/workspace/main.go"]
+            }
+            self.containers.verify_files_readable(
+                container,
+                required_files.get(task.runtime, required_files["python"])
+            )
             
             cmd, env_vars = self._build_command(task, use_payload_file)
             
@@ -116,6 +128,7 @@ class TaskExecutor:
             start_dr, start_dw = self.containers.get_disk_stats(container.id)
             
             exit_code, output_bytes = self._execute_in_container(container, cmd, env_vars, task.timeout_ms, host_output_dir)
+            container_reusable = True
             
             # Metrics & Cleanup
             end_cpu = self.containers.get_cgroup_cpu_usage(container.id)
@@ -194,9 +207,12 @@ class TaskExecutor:
             )
         finally:
             self.metrics.global_limit.release()
-            # Always return container to pool regardless of success/failure
+            # Reuse only containers that completed setup and execution safely.
             if container:
-                self.containers.release_container(container, task.function_id)
+                if container_reusable:
+                    self.containers.release_container(container, task.function_id)
+                else:
+                    self.containers.discard_container(container)
 
     def _create_busy_response(self, task, start_time):
         return ExecutionResult(
@@ -349,29 +365,25 @@ class TaskExecutor:
 
     def _inject_system_files(self, container):
         """Inject runner.py, sdk.py, and ai_client.py into container."""
-        try:
-            import tempfile
-            import shutil
-            
-            # Paths to inject
-            files_to_inject = {
-                "runner.py": Path(__file__).parent / "runner.py",
-                "sdk.py": Path(__file__).parent / "sdk.py",
-                "ai_client.py": Path(config.AI_SDK_PATH)
-            }
+        import tempfile
+        import shutil
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tmp_path = Path(tmpdir)
-                injected_count = 0
-                
-                for filename, src_path in files_to_inject.items():
-                    if src_path.exists():
-                        shutil.copy(src_path, tmp_path / filename)
-                        injected_count += 1
-                
-                if injected_count > 0:
-                    self.containers.copy_to_container(container, tmp_path, "/workspace")
-                    logger.debug(f"System files injected: {injected_count}", container_id=container.id[:12])
-                    
-        except Exception as e:
-            logger.warning("Failed to inject system files", error=str(e))
+        files_to_inject = {
+            "runner.py": Path(__file__).parent / "runner.py",
+            "sdk.py": Path(__file__).parent / "sdk.py",
+            "ai_client.py": Path(config.AI_SDK_PATH)
+        }
+        missing_files = [str(path) for path in files_to_inject.values() if not path.is_file()]
+        if missing_files:
+            raise FileNotFoundError(f"Worker system files are missing: {missing_files}")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            for filename, src_path in files_to_inject.items():
+                shutil.copy(src_path, tmp_path / filename)
+
+            self.containers.copy_to_container(container, tmp_path, "/workspace")
+            logger.debug(
+                f"System files injected: {len(files_to_inject)}",
+                container_id=container.id[:12]
+            )
