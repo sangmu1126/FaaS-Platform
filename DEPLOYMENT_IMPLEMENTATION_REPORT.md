@@ -16,11 +16,11 @@ AWS 인프라와 Controller/Worker 런타임, React Dashboard와 self-hosted BFF
 
 | 항목 | 배포 결과 |
 |---|---|
-| Controller API | `http://43.203.18.61:8080` |
+| Controller public ingress | 차단 (`:8080`은 Worker private subnet과 localhost에서만 접근) |
 | Public Dashboard | `https://d2jzknz5q7hmdj.cloudfront.net` |
 | Web delivery | CloudFront → private S3 / ALB → EC2 BFF |
-| API discovery | `GET /` 정상 JSON 응답 |
-| Health check | `GET /health` → `status: OK`, `version: v2.8` |
+| BFF health | CloudFront `GET /api/health` → `status: OK` |
+| Controller health | 인증된 `GET /api/system/status` → `online` |
 | Controller AMI | `ami-0dcd18322b835984c` |
 | Worker AMI | `ami-0543c61581143bcfb` |
 | Controller ASG | 1대, EIP 자동 연결, rolling refresh 구성 |
@@ -28,9 +28,10 @@ AWS 인프라와 Controller/Worker 런타임, React Dashboard와 self-hosted BFF
 | Worker 상태 | 1대 healthy, LT v3, heartbeat 및 runtime pool 확인 |
 | Terraform | 71 managed resources, 80 state addresses, no drift |
 
-Controller EIP의 `/` 주소는 API discovery endpoint이며 CloudFront 주소가 실제
-Dashboard 진입점이다. 보호된 Controller API는 `x-api-key`가 필요하고, 브라우저는
-Bearer token으로 BFF에만 접근한다.
+CloudFront 주소가 유일한 공개 애플리케이션 진입점이다. Controller EIP는 bootstrap과
+outbound 통신을 위해 유지하지만 Security Group에서 public `:8080` ingress를 허용하지
+않는다. 브라우저는 Bearer token으로 BFF에만 접근하고 BFF가 localhost에서
+`x-api-key`를 붙여 Controller를 호출한다.
 
 ### 이번 수정 요약
 
@@ -51,7 +52,6 @@ flowchart LR
     Browser[Browser] -->|HTTPS| CF[CloudFront]
     CF -->|static assets| Web[(Private S3 Dashboard)]
     CF -->|/api/*| ALB[Public ALB]
-    Client[API Client] -->|HTTP :8080| EIP[Static EIP]
 
     subgraph AWS["AWS VPC 10.0.0.0/16"]
         subgraph Public[Public subnets]
@@ -59,6 +59,7 @@ flowchart LR
                 BFF["Node.js BFF\n:3001"]
                 Controller["Controller\n:8080"]
                 BFF -->|localhost + x-api-key| Controller
+                Controller -->|outbound only| EIP["Static EIP\npublic ingress blocked"]
             end
         end
 
@@ -74,7 +75,6 @@ flowchart LR
         SSM[SSM Parameter Store]
     end
 
-    EIP --> Controller
     ALB --> BFF
     Controller --> SQS
     Controller <--> Redis
@@ -349,6 +349,11 @@ ALB ingress는 AWS-managed CloudFront origin-facing prefix list로 제한한다.
 Controller를 `127.0.0.1:8080`으로 호출하며 배포 환경의 사용자는 on-demand DynamoDB에
 저장한다.
 
+Controller EIP의 `:8080`은 공개하지 않는다. Worker heartbeat는 private subnet CIDR
+규칙으로 유지되고 BFF는 loopback을 사용하므로 이 제한은 함수 배포·실행에 영향을
+주지 않는다. EIP는 Controller bootstrap의 인터넷 접근과 ASG 교체 후 안정적인
+outbound identity를 위해 남긴다.
+
 ```mermaid
 flowchart TD
     Deploy[./scripts/deploy.sh] --> Build[React build /api]
@@ -424,7 +429,8 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant Operator
-    participant EIP
+    participant CloudFront
+    participant BFF
     participant Controller
     participant SSM
     participant Worker
@@ -433,21 +439,26 @@ sequenceDiagram
     participant SQS
     participant CloudWatch
 
-    Operator->>EIP: GET /
-    EIP->>Controller: HTTP :8080
-    Controller-->>Operator: API discovery JSON
-    Operator->>EIP: GET /health
+    Operator->>CloudFront: GET /api/health
+    CloudFront->>BFF: ALB → :3001
+    BFF-->>Operator: status OK
+    Operator->>CloudFront: GET /api/system/status + Bearer token
+    BFF->>Controller: localhost:8080 + x-api-key
     Controller->>Redis: connection state
-    Controller-->>Operator: status OK / v2.8
+    Controller-->>Operator: system status via BFF
     Controller->>SSM: publish current private IP
     Worker->>SSM: resolve Controller private IP
     Worker->>Controller: POST heartbeat + x-api-key
     Controller-->>Worker: 200 OK
-    Operator->>Controller: GET /api/workers + x-api-key
-    Controller-->>Operator: 1 healthy Worker
-    Operator->>Controller: POST /upload (Python zip)
+    Controller-->>BFF: system status + 1 active Worker
+    BFF-->>Operator: authenticated status response
+    Operator->>CloudFront: POST /api/upload (Python zip)
+    CloudFront->>BFF: Bearer token request
+    BFF->>Controller: POST /upload + x-api-key
     Controller->>S3: Store function package
-    Operator->>Controller: POST /run (cold, then warm)
+    Operator->>CloudFront: POST /api/run (cold, then warm)
+    CloudFront->>BFF: Bearer token request
+    BFF->>Controller: POST /run + x-api-key
     Controller->>SQS: Enqueue task
     Worker->>SQS: Long-poll task
     Worker->>S3: Download function package
@@ -455,7 +466,8 @@ sequenceDiagram
     Worker->>Worker: Execute in warm container
     Worker->>Redis: Publish execution result
     Worker->>CloudWatch: Put PeakMemoryBytes
-    Controller-->>Operator: SUCCESS result
+    Controller-->>BFF: SUCCESS result
+    BFF-->>Operator: execution response via CloudFront
 ```
 
 | 검증 | 결과 |
@@ -466,8 +478,8 @@ sequenceDiagram
 | Terraform apply | 완료, destroy 없음 |
 | Post-deploy plan | No changes |
 | Controller PM2 | online |
-| Controller root | discovery JSON 응답 |
-| Controller health | `OK`, `v2.8` |
+| Controller public `:8080` | Security Group에서 차단 |
+| Controller health | 인증된 BFF `/api/system/status` 경유 확인 |
 | Worker systemd | active |
 | Worker runtime images | Python, Node.js, GCC, Go ready |
 | Redis/SQS Worker 연결 | 연결 및 polling 확인 |
@@ -528,16 +540,15 @@ Redis를 통한 결과 반환 등 전체 사용자 체감 구간은 별도로 �
 ### 상태 확인
 
 ```bash
-curl http://43.203.18.61:8080/
-curl http://43.203.18.61:8080/health
 curl https://d2jzknz5q7hmdj.cloudfront.net/api/health
 
 cd Infra-terraform
 terraform plan -detailed-exitcode
 ```
 
-보호된 endpoint를 호출할 때 API key를 shell history나 문서에 직접 기록하지 않는다.
-운영 환경에서는 managed secret store에서 주입해야 한다.
+Controller EIP의 `:8080`은 공개 접근할 수 없다. 보호된 endpoint는 CloudFront/BFF를
+통해 Bearer token으로 호출하며, 인프라 API key는 shell history나 문서에 직접
+기록하지 않는다.
 
 ### 이미지 갱신
 

@@ -18,7 +18,6 @@ flowchart LR
     User[사용자] -->|HTTPS| CF[CloudFront]
     CF -->|정적 파일| Web[(Private S3<br/>React 대시보드)]
     CF -->|/api/*| ALB[Application Load Balancer]
-    EIP[Controller EIP] -->|직접 인프라 API :8080| Controller
 
     subgraph VPC[AWS VPC]
         subgraph Public[Public subnet / 2개 AZ]
@@ -26,6 +25,7 @@ flowchart LR
                 BFF[Node.js BFF :3001]
                 Controller[Controller :8080]
                 BFF -->|localhost / x-api-key| Controller
+                Controller -->|outbound only| EIP[Controller EIP<br/>공개 ingress 차단]
             end
         end
 

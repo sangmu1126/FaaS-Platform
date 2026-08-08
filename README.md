@@ -20,7 +20,6 @@ flowchart LR
     User[User] -->|HTTPS| CF[CloudFront]
     CF -->|static assets| Web[(Private S3<br/>React dashboard)]
     CF -->|/api/*| ALB[Application Load Balancer]
-    EIP[Controller EIP] -->|direct infrastructure API :8080| Controller
 
     subgraph VPC[AWS VPC]
         subgraph Public[Public subnets / 2 AZs]
@@ -28,6 +27,7 @@ flowchart LR
                 BFF[Node.js BFF :3001]
                 Controller[Controller :8080]
                 BFF -->|localhost / x-api-key| Controller
+                Controller -->|outbound only| EIP[Controller EIP<br/>public ingress blocked]
             end
         end
 

@@ -34,7 +34,6 @@ flowchart LR
     User((Browser)) -->|HTTPS| CF[CloudFront]
     CF -->|static| Web[(Private S3)]
     CF -->|/api/*| ALB[ALB]
-    CLI((API Client)) -->|HTTP :8080| EIP[Elastic IP]
 
     subgraph VPC["VPC 10.0.0.0/16"]
         subgraph Public[Public subnets]
@@ -42,6 +41,7 @@ flowchart LR
                 BFF[Node.js BFF :3001]
                 Controller[Controller :8080]
                 BFF -->|localhost| Controller
+                Controller -->|outbound only| EIP[Elastic IP<br/>public ingress blocked]
             end
         end
         subgraph Private[Private subnets]
@@ -52,7 +52,6 @@ flowchart LR
     end
 
     ALB --> BFF
-    EIP --> Controller
     Controller --> SQS[SQS + DLQ]
     Workers --> SQS
     Controller <--> Redis

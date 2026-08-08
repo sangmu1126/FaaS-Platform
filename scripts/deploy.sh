@@ -73,4 +73,4 @@ curl --fail --silent --show-error \
 echo
 echo "Deployment complete"
 echo "Application URL: $APPLICATION_URL"
-echo "Controller API: $(terraform -chdir="$TERRAFORM_DIR" output -raw api_endpoint)"
+echo "Controller API: private only (access through the BFF)"

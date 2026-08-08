@@ -208,5 +208,5 @@ resource "aws_eip" "controller_asg_eip" {
 
 output "controller_eip" {
   value       = aws_eip.controller_asg_eip.public_ip
-  description = "Static Elastic IP for Controller ASG"
+  description = "Controller egress/bootstrap EIP; public inbound API access is blocked"
 }

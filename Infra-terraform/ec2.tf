@@ -48,14 +48,6 @@ resource "aws_security_group" "controller_sg" {
     cidr_blocks = [aws_vpc.main.cidr_block]
   }
 
-  ingress {
-    description = "API"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   # Worker Heartbeat from Private Subnet
   ingress {
     description = "Worker Heartbeat"
