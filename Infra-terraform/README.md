@@ -9,7 +9,7 @@
 
 **Infrastructure as Code (IaC) for High-Performance FaaS Platform**
 
-*Zero NAT Cost Network • Auto-Healing Controller • Backlog-Based Auto Scaling*
+*Public Dashboard • Self-Hosted BFF • Auto-Healing Controller • Backlog-Based Auto Scaling*
 
 </div>
 
@@ -21,6 +21,7 @@ This repository defines the complete AWS infrastructure for the FaaS platform us
 - **Workers** run securely in **Private Subnets** without expensive NAT Gateways, using **VPC Endpoints** for AWS services.
 - **Controller** utilizes an **Auto Scaling Group (ASG)** + **Elastic IP** pattern for self-healing high availability.
 - **Auto Scaling** is driven by real-time SQS queue depth interpretation (Backlog per Instance).
+- **React and BFF delivery** uses CloudFront, a private S3 origin, and an ALB in front of the BFF process hosted on the Controller EC2 instance.
 
 ---
 
@@ -29,37 +30,34 @@ This repository defines the complete AWS infrastructure for the FaaS platform us
 The infrastructure mimics a production-grade environment with strict network isolation.
 
 ```mermaid
-graph TD
-    User((User/CLI)) -->|HTTP/8080| EIP[Elastic IP]
-    EIP --> Controller[⚡ Controller Node]
-    
-    subgraph "VPC (10.0.0.0/16)"
-        subgraph "Public Subnet (10.0.1.x)"
-            Controller[⚡ Controller Node]
-            IGW[Internet Gateway]
-        end
+flowchart LR
+    User((Browser)) -->|HTTPS| CF[CloudFront]
+    CF -->|static| Web[(Private S3)]
+    CF -->|/api/*| ALB[ALB]
+    CLI((API Client)) -->|HTTP :8080| EIP[Elastic IP]
 
-        subgraph "Private Subnet (10.0.10.x)"
-            WorkerGroup[["Worker ASG (1~10)"]]
-            Redis[(ElastiCache Redis)]
-            
-            subgraph "VPC Endpoints (No NAT)"
-                VPCE_S3[Gateway: S3]
-                VPCE_DDB[Gateway: DynamoDB]
-                VPCE_SQS[Interface: SQS]
+    subgraph VPC["VPC 10.0.0.0/16"]
+        subgraph Public[Public subnets]
+            subgraph Host[Controller ASG / 1 EC2]
+                BFF[Node.js BFF :3001]
+                Controller[Controller :8080]
+                BFF -->|localhost| Controller
             end
         end
+        subgraph Private[Private subnets]
+            Workers[[Worker ASG 1-10]]
+            Redis[(ElastiCache Redis)]
+            Endpoints[VPC Endpoints / no NAT]
+        end
     end
-    
-    Controller -- "Enqueues" --> SQS_Q[SQS Queue]
-    SQS_Q -- "Triggers" --> WorkerGroup
-    
-    WorkerGroup -- "Pull Code" --> VPCE_S3
-    WorkerGroup -- "Write Logs" --> VPCE_DDB
-    WorkerGroup -- "Poll Task" --> VPCE_SQS
-    
+
+    ALB --> BFF
+    EIP --> Controller
+    Controller --> SQS[SQS + DLQ]
+    Workers --> SQS
     Controller <--> Redis
-    WorkerGroup <--> Redis
+    Workers <--> Redis
+    Workers --> Endpoints
 ```
 
 ---
@@ -92,6 +90,9 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **Compute** | `aws_autoscaling_group` | `faas-worker-asg` | Dynamic fleet of execution agents. |
 | | `aws_launch_template` | `faas-controller` | Template for orchestrator node. |
+| **Web** | `aws_cloudfront_distribution` | `faas-sooming dashboard` | Public HTTPS and path routing. |
+| | `aws_lb` | `faas-sooming-bff` | CloudFront-only origin for the EC2 BFF. |
+| | `aws_s3_bucket` | `faas-sooming-web-*` | Private React build origin. |
 | **Storage** | `aws_s3_bucket` | `faas-code-...` | Stores user function code ZIPs. |
 | | `aws_dynamodb_table` | `*-table`, `*-logs` | Metadata and Execution Logs (TTL enabled). |
 | **Messaging** | `aws_sqs_queue` | `faas-queue` | Main task distribution queue (VisTimeout: 5m). |
@@ -107,29 +108,32 @@ graph TD
 - AWS CLI (`aws configure` verified)
 - SSH Key Pair (`faas-key-v2.pem` generated locally)
 
-### 1. Initialize
+### One-command deployment
+
+Run from the repository root. The wrapper builds the application artifact before
+Terraform evaluates `web.tf`, then publishes React and verifies the public BFF.
+
 ```bash
-cd Infra-terraform
-terraform init
+./scripts/deploy.sh
 ```
 
-### 2. Plan & Apply
-```bash
-# Preview changes
-terraform plan
+The final line prints `application_url`. Existing `faas-controller*` and `faas-worker*`
+Packer AMIs are reused.
 
-# Deploy infrastructure
-terraform apply -auto-approve
+### Destruction
+
+```bash
+./scripts/destroy.sh
 ```
 
-### 3. Verification
-After deployment, Terraform will output connection details:
-```bash
-# Connect to Controller
-ssh -i faas-key-v2.pem ec2-user@<controller_eip>
+Terraform does not manage Packer AMIs or their EBS snapshots, so they remain available
+for the next deployment.
 
-# Check Autoscaling Status
-aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names faas-worker-asg
+### Verification
+
+```bash
+terraform -chdir=Infra-terraform output -raw application_url
+curl "$(terraform -chdir=Infra-terraform output -raw application_url)/api/health"
 ```
 
 ---
@@ -139,7 +143,7 @@ aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names faas-wor
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `aws_region` | `ap-northeast-2` | Target deployment region. |
-| `project_name` | `faas` | Prefix for all resources. |
+| `project_name` | `faas-sooming` | Prefix for all resources. |
 | `warm_pool_python_size` | `5` | Number of pre-warmed containers per worker. |
 | `instance_type` | `t3.micro` | Instance size for cost efficiency. |
 

@@ -9,13 +9,16 @@ AMI 제작, Terraform 배포, 장애 진단과 수정 결과를 기록한다. �
 
 ## 1. 결과 요약
 
-AWS 인프라와 Controller/Worker 런타임 배포를 완료했다. Terraform apply로 생성한
-managed resource는 56개이며, data source 5개를 포함한 state address는 61개다.
+AWS 인프라와 Controller/Worker 런타임, React Dashboard와 self-hosted BFF 배포를
+완료했다. Terraform apply로 생성한 managed resource는 71개이며, data source 9개를
+포함한 state address는 80개다.
 마지막 검증에서 configuration drift는 없었다.
 
 | 항목 | 배포 결과 |
 |---|---|
 | Controller API | `http://43.203.18.61:8080` |
+| Public Dashboard | `https://d2jzknz5q7hmdj.cloudfront.net` |
+| Web delivery | CloudFront → private S3 / ALB → EC2 BFF |
 | API discovery | `GET /` 정상 JSON 응답 |
 | Health check | `GET /health` → `status: OK`, `version: v2.8` |
 | Controller AMI | `ami-0dcd18322b835984c` |
@@ -23,11 +26,11 @@ managed resource는 56개이며, data source 5개를 포함한 state address는 
 | Controller ASG | 1대, EIP 자동 연결, rolling refresh 구성 |
 | Worker ASG | 1–10대, SQS backlog 기반 확장, rolling refresh 구성 |
 | Worker 상태 | 1대 healthy, LT v3, heartbeat 및 runtime pool 확인 |
-| Terraform | 56 managed resources, 61 state addresses, no drift |
+| Terraform | 71 managed resources, 80 state addresses, no drift |
 
-`/` 주소는 Dashboard가 아니라 Controller API의 discovery endpoint다. 보호된 API는
-`x-api-key` 헤더가 필요하며, 브라우저 사용자는 별도로 배포한 BFF와 Dashboard를
-통해 접근해야 한다.
+Controller EIP의 `/` 주소는 API discovery endpoint이며 CloudFront 주소가 실제
+Dashboard 진입점이다. 보호된 Controller API는 `x-api-key`가 필요하고, 브라우저는
+Bearer token으로 BFF에만 접근한다.
 
 ### 이번 수정 요약
 
@@ -39,18 +42,24 @@ managed resource는 56개이며, data source 5개를 포함한 state address는 
 | 새 AMI가 기존 인스턴스를 자동 교체하지 않음 | ASG Launch Template 참조 | `$Latest` 대신 concrete latest version 사용 | rolling refresh 100% 성공 |
 | `packer init .`가 template 변수 충돌로 실패 | Packer 실행 문서 | Worker/Controller HCL별로 init | 두 template validate 통과 |
 | UI 시간이 handler 실행시간처럼 보임 | 실행 단계별 시간 의미 분리 | `handlerDurationMs`, Worker time, Client E2E 개별 계측 | 0ms/150ms control 오차 범위 확인 |
+| 로컬 실행 없이는 Dashboard에 접속할 수 없음 | Web delivery와 BFF 운영 자동화 | CloudFront/S3/ALB, EC2 BFF package rollout, deploy script | 외부 가입·로그인·함수 조회 성공 |
 
 ## 2. 현재 아키텍처
 
 ```mermaid
 flowchart LR
+    Browser[Browser] -->|HTTPS| CF[CloudFront]
+    CF -->|static assets| Web[(Private S3 Dashboard)]
+    CF -->|/api/*| ALB[Public ALB]
     Client[API Client] -->|HTTP :8080| EIP[Static EIP]
-    Dashboard[React Dashboard] -->|Bearer token| BFF[Node.js BFF]
-    BFF -->|x-api-key| EIP
 
     subgraph AWS["AWS VPC 10.0.0.0/16"]
         subgraph Public[Public subnets]
-            Controller["Controller ASG\n1 instance\nNode.js 22"]
+            subgraph Host["Controller ASG / 1 EC2"]
+                BFF["Node.js BFF\n:3001"]
+                Controller["Controller\n:8080"]
+                BFF -->|localhost + x-api-key| Controller
+            end
         end
 
         subgraph Private[Private subnets / no NAT]
@@ -60,12 +69,13 @@ flowchart LR
 
         SQS[SQS + DLQ]
         S3[(Code and output S3)]
-        DDB[(Metadata and logs DynamoDB)]
+        DDB[(Metadata, logs and BFF users DynamoDB)]
         VPCE["VPC Endpoints\nS3 · DynamoDB · SQS\nSSM · CloudWatch"]
         SSM[SSM Parameter Store]
     end
 
     EIP --> Controller
+    ALB --> BFF
     Controller --> SQS
     Controller <--> Redis
     Controller --> S3
@@ -80,9 +90,9 @@ flowchart LR
     Workers -. private AWS traffic .-> VPCE
 ```
 
-React/BFF 코드는 저장소에 있지만 현재 Terraform 배포 범위에는 포함되지 않는다.
-따라서 EIP 주소를 브라우저에서 열면 API 정보가 보이는 것이 정상이며 완성된 웹 화면은
-아니다.
+CloudFront는 React와 `/api/*`를 단일 HTTPS origin처럼 제공한다. 정적 파일은 public
+access가 차단된 S3에 있고, API traffic은 CloudFront origin-facing prefix list만
+허용하는 ALB를 거쳐 Controller EC2의 BFF로 전달된다. AWS Lambda는 요청 경로에 없다.
 
 ## 3. 왜, 무엇을, 어떻게 변경했는가
 
@@ -318,6 +328,47 @@ flowchart LR
 handler는 `0.002–0.004ms`, 150ms handler는 `150.211–150.256ms`로 보고돼 timer가
 Worker orchestration 시간이 아니라 handler 구간만 측정함을 확인했다.
 
+### 3.13 공개 Dashboard와 self-hosted BFF 원클릭 배포
+
+**왜:** 기존에는 Controller와 Worker만 Terraform으로 생성되어 사용자가 Dashboard를
+보려면 노트북에서 `npm run dev`를 직접 실행해야 했다. CloudFront hostname과
+Controller 주소는 destroy 후 재생성할 때 달라질 수 있어 수동 URL 설정도 재현성을
+떨어뜨렸다. 또한 핵심 FaaS 구현을 강조하는 포트폴리오에서 BFF를 AWS Lambda로
+운영하면 관리형 FaaS와 직접 구현한 실행 plane의 경계가 불필요하게 흐려진다.
+
+**무엇을:** React 정적 배포, Node.js BFF 운영, 사용자 저장소와 외부 HTTPS 진입점을
+Terraform 범위에 포함했다. BFF는 별도 Lambda나 EC2를 만들지 않고 기존 Controller
+ASG 인스턴스의 독립 PM2 process로 실행한다.
+
+**어떻게:** `scripts/deploy.sh`가 lockfile 기반 dependency 설치, React build,
+BFF package 생성을 수행한다. Terraform은 package를 code S3 bucket에 올리고 package
+hash를 Controller Launch Template user data에 포함한다. 변경된 LT version이 ASG
+rolling refresh를 시작하면 새 인스턴스가 package를 내려받아 `faas-bff`를 3001번
+port에서 실행한다. CloudFront는 `/`를 private S3로, `/api/*`를 ALB로 분기한다.
+ALB ingress는 AWS-managed CloudFront origin-facing prefix list로 제한한다. BFF는
+Controller를 `127.0.0.1:8080`으로 호출하며 배포 환경의 사용자는 on-demand DynamoDB에
+저장한다.
+
+```mermaid
+flowchart TD
+    Deploy[./scripts/deploy.sh] --> Build[React build /api]
+    Deploy --> Package[BFF package]
+    Package --> CodeS3[(Code S3)]
+    CodeS3 --> LT[Controller LT + package hash]
+    LT --> Refresh[ASG rolling refresh]
+    Refresh --> Processes[Controller PM2 + BFF PM2]
+    Build --> WebS3[(Private Web S3)]
+    WebS3 --> CF[CloudFront HTTPS]
+    CF -->|/api/*| ALB[ALB]
+    ALB --> Processes
+    CF --> URL[application_url output]
+```
+
+실제 배포에서 Controller refresh `d92aac7b-9000-48af-b1d1-42ed565a6074`가 100%로
+완료됐고 ALB target `i-08ec431a1f51e619a`가 `healthy`가 됐다. CloudFront 외부 주소로
+SPA route, `/api/health`, 회원가입, 로그인, Bearer token 기반 `/api/functions` 조회를
+검증했으며 테스트 사용자는 검증 후 DynamoDB에서 제거했다.
+
 ## 4. 배포 중 발견한 문제와 해결 흐름
 
 ```mermaid
@@ -422,6 +473,10 @@ sequenceDiagram
 | Redis/SQS Worker 연결 | 연결 및 polling 확인 |
 | Worker heartbeat | 1 healthy Worker |
 | Controller/Worker refresh | 각 100% successful |
+| Public Dashboard | CloudFront HTTPS에서 `/`와 SPA route 200 |
+| Self-hosted BFF | ALB target healthy, `/api/health` 200 |
+| Authentication E2E | 가입·로그인·Bearer token 함수 목록 조회 성공 |
+| Managed FaaS dependency | Lambda/API Gateway 제거 확인 |
 | Worker tests | 15개 통과 |
 | Python cold execution | `SUCCESS`, exit 0, Worker 보고 `durationMs: 1,402` |
 | Python warm execution | `SUCCESS`, exit 0, Worker 보고 `durationMs: 743` |
@@ -475,6 +530,7 @@ Redis를 통한 결과 반환 등 전체 사용자 체감 구간은 별도로 �
 ```bash
 curl http://43.203.18.61:8080/
 curl http://43.203.18.61:8080/health
+curl https://d2jzknz5q7hmdj.cloudfront.net/api/health
 
 cd Infra-terraform
 terraform plan -detailed-exitcode
@@ -506,7 +562,7 @@ heartbeat를 함께 확인한다.
 
 ### 우선순위 P0 — 공개 운영 전 필수
 
-1. Controller/BFF 앞에 HTTPS termination과 정식 도메인을 배치한다.
+1. 고정 URL이 필요하면 CloudFront에 정식 도메인, Route 53과 ACM certificate를 연결한다.
 2. AWS root credential 대신 최소 권한 IAM/SSO 또는 CI OIDC role로 배포한다.
 3. Terraform local state를 암호화·잠금 가능한 remote backend로 이전한다.
 4. API key와 BFF secret을 Secrets Manager/Parameter Store SecureString으로 이전하고
@@ -520,7 +576,7 @@ heartbeat를 함께 확인한다.
 3. CloudWatch Logs/Prometheus/Grafana 수집, dashboard와 alert를 Terraform으로 만든다.
 4. AMI lifecycle 정책을 추가하고 이번 작업 중 생성된 이전 AMI와 snapshot을 확인 후
    정리한다.
-5. BFF와 React Dashboard 배포를 Terraform 또는 별도 delivery pipeline에 포함한다.
+5. BFF를 Controller와 독립적으로 확장해야 할 시점에 별도 ASG로 분리한다.
 
 ### 우선순위 P2 — 기술 부채
 
@@ -534,8 +590,8 @@ heartbeat를 함께 확인한다.
 
 ## 9. 범위와 해석
 
-- 이 배포는 Controller와 Worker를 포함한 AWS infrastructure 배포다.
-- React Dashboard와 BFF는 코드로 존재하지만 아직 AWS에 배포되지 않았다.
+- 이 배포는 Controller, Worker, React Dashboard와 self-hosted BFF를 포함한다.
+- Dashboard/BFF delivery에는 CloudFront, private S3와 ALB를 사용하며 Lambda는 사용하지 않는다.
 - README의 성능·비용 수치는 별도 직접 측정 결과이며 이번 배포 과정에서 재측정하지
   않았다.
 - AMI ID, EIP, resource name은 이 배포 시점의 snapshot이며 이후 배포에서 바뀔 수

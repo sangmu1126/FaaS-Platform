@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)
+![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)
 ![Vite](https://img.shields.io/badge/Vite-Fast-646CFF?style=for-the-badge&logo=vite)
 ![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC?style=for-the-badge&logo=tailwind-css)
 ![Node](https://img.shields.io/badge/BFF-Node.js-339933?style=for-the-badge&logo=node.js)
@@ -31,6 +31,11 @@ application/
 
 ## 🚀 Getting Started
 
+For an AWS deployment, run `./scripts/deploy.sh` from the repository root. It builds
+the frontend with `VITE_API_BASE_URL=/api`, packages the BFF, applies Terraform, and
+prints the CloudFront URL. The BFF runs as a PM2 process on the Controller EC2 instance
+behind an ALB; it does not use AWS Lambda. The steps below are for local development.
+
 You need to install dependencies and run the server in each directory.
 
 ### 1. Frontend (React App)
@@ -55,7 +60,7 @@ VITE_API_BASE_URL=http://<YOUR_BFF_HOST>:8080/api
 
 ---
 
-### 2. Backend (Optional Proxy)
+### 2. Backend (BFF)
 
 A BFF (Backend For Frontend) mediating between the Frontend and Infra Controller.
 It handles CORS, hides API keys, and aggregates logs.
@@ -70,10 +75,12 @@ npm run dev
 #### Configuration (.env)
 ```ini
 # backend/.env
-PORT=3000
+PORT=8080
 AWS_CONTROLLER_URL=http://<YOUR_CONTROLLER_IP>:8080
 INFRA_API_KEY=<TERRAFORM_INFRA_API_KEY_OUTPUT>
 AUTH_TOKEN_SECRET=<AT_LEAST_32_RANDOM_CHARACTERS>
+# Optional locally; Terraform sets this to DynamoDB in AWS.
+AUTH_USERS_TABLE=<DYNAMODB_TABLE_NAME>
 ```
 
 The infrastructure API key is server-side only. Do not expose it through a

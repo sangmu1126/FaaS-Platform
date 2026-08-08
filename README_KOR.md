@@ -7,21 +7,26 @@ AWS EC2, Docker, SQS, Redis, S3, DynamoDB로 구성한 커스텀 FaaS
 미리 준비한 Docker 컨테이너를 재사용해 함수 시작 지연과 인프라 비용을 줄입니다.
 
 이 저장소는 아키텍처와 성능을 검증하기 위한 프로젝트입니다. Worker 자동 확장,
-Controller 자동 복구, 함수 격리, 인증, 관측 기능을 구현했습니다. 실제 운영 환경에는
-TLS 종료, 여러 BFF 인스턴스가 공유하는 사용자 저장소, 애플리케이션 배포 자동화 같은
-환경별 구성이 추가로 필요합니다.
+Controller 자동 복구, 함수 격리, 인증, 관측 기능과 공개 대시보드 원클릭 배포를
+구현했습니다. 대시보드는 CloudFront가 제공하며 직접 운영하는 BFF는 Controller와
+같은 EC2에서 실행됩니다. 요청 경로에 AWS Lambda를 사용하지 않습니다.
 
 ## 아키텍처
 
 ```mermaid
 flowchart LR
-    User[사용자] --> Web[React 대시보드]
-    Web -->|Bearer 토큰| BFF[Node.js BFF<br/>Terraform 배포 대상 아님]
-    BFF -->|HTTP :8080 / x-api-key| EIP[Controller EIP]
+    User[사용자] -->|HTTPS| CF[CloudFront]
+    CF -->|정적 파일| Web[(Private S3<br/>React 대시보드)]
+    CF -->|/api/*| ALB[Application Load Balancer]
+    EIP[Controller EIP] -->|직접 인프라 API :8080| Controller
 
     subgraph VPC[AWS VPC]
         subgraph Public[Public subnet / 2개 AZ]
-            Controller[Controller ASG<br/>desired 1]
+            subgraph Host[Controller ASG / desired 1]
+                BFF[Node.js BFF :3001]
+                Controller[Controller :8080]
+                BFF -->|localhost / x-api-key| Controller
+            end
         end
 
         subgraph Private[Private subnet / 2개 AZ]
@@ -30,7 +35,7 @@ flowchart LR
             Endpoints[VPC Endpoint]
         end
 
-        EIP --> Controller
+        ALB --> BFF
         Worker -->|private IP로<br/>인증 heartbeat| Controller
         Controller <-->|rate limit 및 결과| Redis
         Worker -->|결과 발행| Redis
@@ -39,7 +44,7 @@ flowchart LR
 
     SQS[AWS SQS]
     S3[(AWS S3)]
-    DDB[(DynamoDB)]
+    DDB[(DynamoDB<br/>함수, 로그, BFF 사용자)]
     CW[CloudWatch]
     AI[외부 Ollama AI Node<br/>선택 사항 / 미배포]
 
@@ -56,9 +61,11 @@ flowchart LR
     Worker -. AI_ENDPOINT .-> AI
 ```
 
-React 대시보드와 BFF는 `application/`에 구현되어 있지만 현재 Terraform 배포 범위에는
-포함되지 않습니다. Controller는 기본적으로 EIP의 HTTP 8080 포트를 사용하므로 공개
-운영 시에는 별도의 HTTPS reverse proxy 또는 TLS 종료 계층이 필요합니다.
+Terraform이 두 애플리케이션 진입점을 모두 구성합니다. CloudFront가 공개 HTTPS를
+종료하고 private S3의 React build를 제공하며 `/api/*`는 ALB로 전달합니다. ALB는
+AWS가 관리하는 CloudFront origin-facing prefix list에서 오는 요청만 허용하고 3001번
+포트의 BFF로 전달합니다. BFF와 Controller는 자동 복구되는 동일 EC2에서 localhost로
+통신하므로 브라우저에 인프라 API key가 노출되지 않습니다.
 
 Ollama AI Node는 `AI_ENDPOINT`로 참조하는 선택적 외부 연동입니다. 이 저장소의
 Terraform은 현재 AI Node 또는 관련 네트워크를 생성하지 않습니다.
@@ -100,9 +107,9 @@ sequenceDiagram
 - 브라우저에는 Controller API key를 노출하지 않고 BFF만 `INFRA_API_KEY` 사용
 - Controller에서 Redis Lua token bucket rate limiting 적용
 
-BFF는 현재 사용자를 로컬 `auth-users.json` 파일에 저장합니다. 단일 인스턴스
-데모에는 충분하지만 여러 BFF 인스턴스를 운영하려면 DynamoDB나 RDS 같은 공유
-저장소가 필요합니다.
+배포된 BFF는 on-demand DynamoDB table에 사용자를 저장하고 conditional write로
+중복 email 가입을 방지합니다. `AUTH_USERS_TABLE`이 없는 로컬 개발에서는 기존의
+가벼운 `auth-users.json` 저장 방식을 사용합니다.
 
 ### Controller
 
@@ -259,25 +266,32 @@ packer build controller-ami.pkr.hcl
 Terraform은 가장 최근의 self-owned `faas-worker*`, `faas-controller*` AMI를 조회합니다.
 Terraform plan을 실행하기 전에 두 AMI를 모두 build하십시오.
 
-### 2. AWS 인프라 생성
+### 2. 전체 플랫폼 배포
 
 ```bash
-cd Infra-terraform
-terraform init
-terraform fmt -check
-terraform validate
-terraform plan
-terraform apply
+./scripts/deploy.sh
 ```
 
-배포 후 BFF에 전달할 내부 API key와 Controller URL을 확인합니다.
+이 스크립트는 lockfile 기반 dependency 설치, `/api` 상대 주소로 React build, BFF
+package 생성, Terraform 적용, S3 업로드, CloudFront cache 무효화, `/api/health`
+검증과 공개 URL 출력을 순서대로 실행합니다. 기존 Packer AMI는 재사용합니다.
 
 ```bash
-terraform output -raw infra_api_key
-terraform output -raw api_endpoint
+terraform -chdir=Infra-terraform output -raw application_url
 ```
 
-### 3. BFF 실행
+Packer AMI와 snapshot을 남겨두고 Terraform 관리 resource를 모두 제거하려면 다음을
+실행합니다.
+
+```bash
+./scripts/destroy.sh
+```
+
+CloudFront 기본 hostname은 destroy 후 다시 배포하면 변경됩니다. Terraform이 내부
+주소를 모두 다시 연결하므로 기능에는 영향이 없습니다. 고정 포트폴리오 주소가 필요할
+때만 custom domain, Route 53, ACM certificate를 추가하면 됩니다.
+
+### 3. BFF 로컬 실행
 
 ```bash
 cd application/backend
@@ -298,7 +312,7 @@ AUTH_TOKEN_SECRET=<AT_LEAST_32_RANDOM_CHARACTERS>
 npm run dev
 ```
 
-### 4. 대시보드 실행
+### 4. 대시보드 로컬 실행
 
 ```bash
 cd application/frontend
@@ -345,11 +359,10 @@ AWS integration 및 load test에는 배포된 Controller, Redis, SQS, DynamoDB, 
 - [아키텍처 상세](./ARCHITECTURE.md)
 - [구현 및 배포 보고서](./DEPLOYMENT_IMPLEMENTATION_REPORT.md)
 
-공개 배포 전 확인 사항:
+장기 공개 운영 전 확인 사항:
 
-1. BFF와 Controller 앞에 HTTPS 종료 계층을 추가합니다.
-2. BFF 사용자를 `auth-users.json`에서 공유 database로 이전합니다.
-3. BFF secret을 관리형 secret store에 저장하고 rotation 절차를 정의합니다.
-4. 대상 Linux/Cgroup v2 host에서 Docker 격리 test를 실행합니다.
-5. Prometheus scraping, dashboard, alerting 및 중앙 process log를 구성합니다.
-6. Request plane 고가용성이 필요하면 multi-Controller 구조를 추가합니다.
+1. 고정 URL과 명시적 최신 TLS policy가 필요하면 custom domain과 ACM certificate를 추가합니다.
+2. BFF secret을 관리형 secret store에 저장하고 rotation 절차를 정의합니다.
+3. 대상 Linux/Cgroup v2 host에서 Docker 격리 test를 실행합니다.
+4. Prometheus scraping, dashboard, alerting 및 중앙 process log를 구성합니다.
+5. Request plane 고가용성이 필요하면 BFF와 Controller를 분리하거나 수평 확장합니다.

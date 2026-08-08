@@ -8,22 +8,27 @@ reuses pre-warmed Docker containers to reduce function startup latency and
 infrastructure cost.
 
 This repository is an architecture and performance validation project. It implements
-Worker autoscaling, Controller self-healing, function isolation, authentication, and
-observability. Production deployments still need environment-specific additions such
-as TLS termination, a shared multi-instance BFF user store, and automated application
-deployment.
+Worker autoscaling, Controller self-healing, function isolation, authentication,
+observability, and one-command delivery of the public dashboard. The dashboard is
+served through CloudFront, while the self-hosted BFF runs beside the Controller on EC2;
+AWS Lambda is not part of the request path.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    User[User] --> Web[React Dashboard]
-    Web -->|Bearer token| BFF[Node.js BFF<br/>not provisioned by Terraform]
-    BFF -->|HTTP :8080 / x-api-key| EIP[Controller EIP]
+    User[User] -->|HTTPS| CF[CloudFront]
+    CF -->|static assets| Web[(Private S3<br/>React dashboard)]
+    CF -->|/api/*| ALB[Application Load Balancer]
+    EIP[Controller EIP] -->|direct infrastructure API :8080| Controller
 
     subgraph VPC[AWS VPC]
         subgraph Public[Public subnets / 2 AZs]
-            Controller[Controller ASG<br/>desired 1]
+            subgraph Host[Controller ASG / desired 1]
+                BFF[Node.js BFF :3001]
+                Controller[Controller :8080]
+                BFF -->|localhost / x-api-key| Controller
+            end
         end
 
         subgraph Private[Private subnets / 2 AZs]
@@ -32,7 +37,7 @@ flowchart LR
             Endpoints[VPC Endpoints]
         end
 
-        EIP --> Controller
+        ALB --> BFF
         Worker -->|authenticated heartbeat<br/>to private IP| Controller
         Controller <-->|rate limits and results| Redis
         Worker -->|publish results| Redis
@@ -41,7 +46,7 @@ flowchart LR
 
     SQS[AWS SQS]
     S3[(AWS S3)]
-    DDB[(DynamoDB)]
+    DDB[(DynamoDB<br/>functions, logs, BFF users)]
     CW[CloudWatch]
     AI[External Ollama AI Node<br/>optional / not provisioned]
 
@@ -58,10 +63,12 @@ flowchart LR
     Worker -. AI_ENDPOINT .-> AI
 ```
 
-The React dashboard and BFF are implemented under `application/`, but they are not
-currently included in the Terraform deployment. The Controller uses HTTP port 8080
-on an EIP by default, so a public production deployment requires a separate HTTPS
-reverse proxy or TLS termination layer.
+Terraform provisions both application entry points. CloudFront terminates public HTTPS,
+serves the React build from a private S3 origin, and sends `/api/*` to an ALB. The ALB
+accepts traffic only from the AWS-managed CloudFront origin-facing prefix list and
+forwards it to the BFF on port 3001. The BFF and Controller share the self-healing
+Controller instance, communicating over localhost without exposing the infrastructure
+API key to the browser.
 
 The Ollama AI Node is an optional external integration referenced by `AI_ENDPOINT`.
 This repository does not currently provision the AI Node or its network with Terraform.
@@ -103,9 +110,9 @@ then be retrieved from `/api/status/:jobId`.
 - Keep the Controller API key out of the browser; only the BFF uses `INFRA_API_KEY`
 - Apply Redis Lua token-bucket rate limiting in the Controller
 
-The BFF currently stores users in a local `auth-users.json` file. This is sufficient
-for a single-instance demo, but multiple BFF instances require a shared store such as
-DynamoDB or RDS.
+The deployed BFF stores users in an on-demand DynamoDB table and uses conditional writes
+to prevent duplicate email registration. Local development retains the lightweight
+`auth-users.json` fallback when `AUTH_USERS_TABLE` is not configured.
 
 ### Controller
 
@@ -263,25 +270,32 @@ packer build controller-ami.pkr.hcl
 Terraform looks up the latest self-owned `faas-worker*` and `faas-controller*` AMIs.
 Build both AMIs before running a Terraform plan.
 
-### 2. Provision AWS infrastructure
+### 2. Deploy the complete platform
 
 ```bash
-cd Infra-terraform
-terraform init
-terraform fmt -check
-terraform validate
-terraform plan
-terraform apply
+./scripts/deploy.sh
 ```
 
-After deployment, retrieve the internal API key and Controller URL for the BFF:
+The script installs locked dependencies, builds React with the same-origin `/api`
+endpoint, packages the BFF, applies Terraform, uploads static assets, invalidates
+CloudFront, verifies `/api/health`, and prints the public URL. Existing Packer AMIs are
+reused.
 
 ```bash
-terraform output -raw infra_api_key
-terraform output -raw api_endpoint
+terraform -chdir=Infra-terraform output -raw application_url
 ```
 
-### 3. Start the BFF
+To remove every Terraform-managed resource while retaining Packer AMIs and snapshots:
+
+```bash
+./scripts/destroy.sh
+```
+
+CloudFront assigns a new default hostname after a destroy and redeploy. This does not
+break the system because Terraform rewires every internal address. Add a custom domain,
+Route 53 record, and ACM certificate only when a stable portfolio URL is required.
+
+### 3. Run the BFF locally
 
 ```bash
 cd application/backend
@@ -302,7 +316,7 @@ AUTH_TOKEN_SECRET=<AT_LEAST_32_RANDOM_CHARACTERS>
 npm run dev
 ```
 
-### 4. Start the dashboard
+### 4. Run the dashboard locally
 
 ```bash
 cd application/frontend
@@ -349,11 +363,10 @@ Worker environment. See [tests/README.md](./tests/README.md) for the environment
 - [Architecture details](./ARCHITECTURE.md)
 - [Implementation and deployment report](./DEPLOYMENT_IMPLEMENTATION_REPORT.md)
 
-Before a public deployment:
+Before a long-lived public deployment:
 
-1. Add HTTPS termination in front of the BFF and Controller.
-2. Move BFF users from `auth-users.json` to a shared database.
-3. Store BFF secrets in a managed secret store and define rotation procedures.
-4. Run Docker isolation tests on the target Linux/Cgroup v2 host.
-5. Configure Prometheus scraping, dashboarding, alerting, and centralized process logs.
-6. Add a multi-Controller design if request-plane high availability is required.
+1. Add a custom domain and ACM certificate if a stable URL and an explicit modern TLS policy are required.
+2. Store BFF secrets in a managed secret store and define rotation procedures.
+3. Run Docker isolation tests on the target Linux/Cgroup v2 host.
+4. Configure Prometheus scraping, dashboarding, alerting, and centralized process logs.
+5. Separate or horizontally scale the BFF and Controller when request-plane high availability is required.
