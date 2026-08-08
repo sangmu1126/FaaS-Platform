@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 package-lock.json
+!backend/package-lock.json
 # Keep package-lock if you want to lock versions, but usually ignored in some dev flows. 
 # Standard is to commit package-lock.json. I will comment it out to keep it.
 # package-lock.json

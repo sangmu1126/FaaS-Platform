@@ -9,6 +9,8 @@
         "dev": "nodemon --ignore telemetry.json --ignore '*.log' src/server.js"
     },
     "dependencies": {
+        "@aws-sdk/client-dynamodb": "^3.1106.0",
+        "@aws-sdk/lib-dynamodb": "^3.1106.0",
         "archiver": "^7.0.1",
         "cors": "^2.8.5",
         "dayjs": "^1.11.10",
