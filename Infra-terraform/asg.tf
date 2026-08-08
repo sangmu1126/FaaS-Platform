@@ -60,6 +60,16 @@ resource "aws_iam_role_policy" "worker_policy" {
           "ssm:GetParameter"
         ]
         Resource = "arn:aws:ssm:*:*:parameter/faas/controller/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "cloudwatch:PutMetricData"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "FaaS/FunctionRunner"
+          }
+        }
       }
     ]
   })
