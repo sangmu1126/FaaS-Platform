@@ -21,6 +21,7 @@ export interface FunctionMetrics {
   invocations?: number;
   avgResponseTime: number;
   avgDuration?: number;
+  avgHandlerDuration?: number | null;
   coldStarts: number;
   errors: number;
   successRate: number;

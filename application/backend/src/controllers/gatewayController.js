@@ -219,6 +219,7 @@ export const gatewayController = {
                     memoryMb: awsFn.memoryMb || 128,
                     invocations: awsFn.invocations || 0,
                     avgDuration: awsFn.avgDuration || 0,
+                    avgHandlerDuration: awsFn.avgHandlerDuration ?? null,
                     local_stats: local
                 };
             });
@@ -437,11 +438,17 @@ export const gatewayController = {
             const errorLogs = logs.filter(l => l.status === 'ERROR' || l.status === 'TIMEOUT').length;
             const successLogs = logs.filter(l => l.status === 'SUCCESS').length;
             const durations = logs.filter(l => l.duration > 0).map(l => l.duration);
+            const handlerDurations = logs
+                .filter(l => Number.isFinite(Number(l.handlerDurationMs)) && Number(l.handlerDurationMs) >= 0)
+                .map(l => Number(l.handlerDurationMs));
 
             const totalInvocations = successLogs + errorLogs;
             const avgDuration = durations.length > 0
                 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
                 : 0;
+            const avgHandlerDuration = handlerDurations.length > 0
+                ? Number((handlerDurations.reduce((a, b) => a + b, 0) / handlerDurations.length).toFixed(3))
+                : null;
 
             // 5. Success Rate Calculation
             const successRate = totalInvocations > 0
@@ -452,6 +459,7 @@ export const gatewayController = {
                 // Windowed Metrics (Priority)
                 invocations: totalInvocations,
                 avgDuration: avgDuration,
+                avgHandlerDuration: avgHandlerDuration,
                 errors: errorLogs,
                 successRate: successRate,
 
@@ -462,6 +470,7 @@ export const gatewayController = {
                 recentExecutions: logs.slice(0, 1000).map(l => ({ // Return all fetched for charts
                     timestamp: l.timestamp,
                     duration: l.duration || 0,
+                    handlerDurationMs: l.handlerDurationMs ?? null,
                     status: l.status,
                     memory: l.memory || 0
                 }))

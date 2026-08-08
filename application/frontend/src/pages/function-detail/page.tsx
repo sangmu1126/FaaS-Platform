@@ -334,6 +334,8 @@ export default function FunctionDetailPage() {
         output: JSON.stringify(result, null, 2),
         executionTime,
         responseTime: result.durationMs || executionTime,
+        workerDurationMs: result.durationMs ?? null,
+        handlerDurationMs: result.handlerDurationMs ?? null,
         memoryUsed: result.peakMemoryBytes ? Math.round(result.peakMemoryBytes / 1024 / 1024) : 0,
         memoryAllocated: result.allocatedMemoryMb || functionItem?.memoryMb || 128,
         cpuUsage: 0, // Not currently returned by worker
@@ -623,12 +625,14 @@ export default function FunctionDetailPage() {
                       <div className="text-3xl font-bold text-gray-900">{metrics.invocations.toLocaleString()}</div>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
-                      <div className="text-sm text-gray-600 mb-2">Avg Response Time</div>
+                      <div className="text-sm text-gray-600 mb-2">Avg Worker Time</div>
                       <div className="text-3xl font-bold text-gray-900">{metrics.avgDuration}ms</div>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
-                      <div className="text-sm text-gray-600 mb-2">Cold Start</div>
-                      <div className="text-3xl font-bold text-blue-600">{metrics.coldStarts}ms</div>
+                      <div className="text-sm text-gray-600 mb-2">Avg Handler Time</div>
+                      <div className="text-3xl font-bold text-blue-600">
+                        {metrics.avgHandlerDuration != null ? `${metrics.avgHandlerDuration}ms` : '-'}
+                      </div>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-gray-200 shadow-sm">
                       <div className="text-sm text-gray-600 mb-2">Error Count</div>
@@ -882,7 +886,7 @@ export default function FunctionDetailPage() {
                                   borderRadius: '12px',
                                   border: '1px solid #E5E7EB'
                                 }}
-                                formatter={(value: number) => [`${value}ms`, 'Avg Response Time']}
+                                formatter={(value: number) => [`${value}ms`, 'Avg Worker Time']}
                               />
                               <Line
                                 type="monotone"
@@ -891,7 +895,7 @@ export default function FunctionDetailPage() {
                                 strokeWidth={2}
                                 dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
                                 activeDot={{ r: 6, fill: '#059669' }}
-                                name="Avg Response Time (ms)"
+                                name="Avg Worker Time (ms)"
                               />
                             </LineChart>
                           </ResponsiveContainer>
@@ -1496,10 +1500,22 @@ export default function FunctionDetailPage() {
                         </div>
 
                         {/* Metrics */}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                           <div className="bg-gradient-to-br from-blue-50 to-gray-50 rounded-xl p-4 border border-gray-200">
-                            <div className="text-sm text-gray-600 mb-1">Response Time</div>
-                            <div className="text-2xl font-bold text-blue-600">{testResult.responseTime}ms</div>
+                            <div className="text-sm text-gray-600 mb-1">Handler Time</div>
+                            <div className="text-2xl font-bold text-blue-600">
+                              {testResult.handlerDurationMs != null ? `${testResult.handlerDurationMs}ms` : '-'}
+                            </div>
+                          </div>
+                          <div className="bg-gradient-to-br from-indigo-50 to-gray-50 rounded-xl p-4 border border-indigo-100">
+                            <div className="text-sm text-gray-600 mb-1">Worker Processing</div>
+                            <div className="text-2xl font-bold text-indigo-600">
+                              {testResult.workerDurationMs != null ? `${testResult.workerDurationMs}ms` : '-'}
+                            </div>
+                          </div>
+                          <div className="bg-gradient-to-br from-purple-50 to-gray-50 rounded-xl p-4 border border-purple-100">
+                            <div className="text-sm text-gray-600 mb-1">Client E2E</div>
+                            <div className="text-2xl font-bold text-purple-600">{testResult.executionTime}ms</div>
                           </div>
                           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
                             <div className="text-sm text-gray-600 mb-1">Memory Used</div>

@@ -365,7 +365,7 @@ export default function LogsPage() {
                             {/* Col 3: Metrics */}
                             <div className="col-span-4 flex items-center gap-6">
                               <div className="flex flex-col">
-                                <span className="text-xs text-gray-500 mb-0.5">Response Time</span>
+                                <span className="text-xs text-gray-500 mb-0.5">Worker Time</span>
                                 <span className="text-sm font-mono font-medium text-gray-700">
                                   {log.duration ? `${log.duration}ms` : '-'}
                                 </span>
