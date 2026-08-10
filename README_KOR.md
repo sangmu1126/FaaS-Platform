@@ -169,6 +169,8 @@ script는 `tests/`에 있으며 상세 분석은
 | Runtime 초기화 | Native 약 **120ms**, interpreted runtime 약 **200ms** |
 | Controller 사설 Ingress | **445.57 accepted RPS**, 20 VU·10초, HTTP 수락 성공률 100% |
 | 공개 경로 지속 Ingress | **232.74 accepted RPS**, 20 VU·60초, HTTP 수락 성공률 100%, p95 175.03ms |
+| 단일 Worker 실행 완료 처리량 | **3 RPS·60초**, 공개 동기 E2E 181/181건 성공, Worker p95 809ms, 공개 p95 1.67초 |
+| 단일 Worker 과부하 경계 | **7 RPS 유입 시 약 3.1 완료 RPS에서 포화**, Queue 지연 누적; 안정 용량 수치로 사용하지 않음 |
 | Cgroup metric 조회 | 평균 **15.5µs** |
 | Docker API 대비 metric 수집 | **120,000배 개선** (`1994ms → 0.0155ms`) |
 
@@ -185,6 +187,7 @@ Load test 조건과 해석은 다음 자료를 참고하십시오.
 
 - [성능 및 확장성 보고서](./REPORT_PERFORMANCE_SCALABILITY.md)
 - [한글 성능 및 확장성 보고서](./REPORT_PERFORMANCE_SCALABILITY_KOR.md)
+- [Worker 보강 후 E2E 상세 보고서](./tests/results/2026-08-10-worker-e2e-report.md)
 - [Cgroup benchmark](./tests/worker/benchmark_simple.py)
 - [Controller load test](./tests/controller)
 

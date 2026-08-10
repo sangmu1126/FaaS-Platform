@@ -173,6 +173,8 @@ in the [performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY.md)
 | Runtime initialization | Approximately **120ms** for native and **200ms** for interpreted runtimes |
 | Controller private ingress | **445.57 accepted requests/second**, 20 VUs for 10s, 100% HTTP admission success |
 | Public-path sustained ingress | **232.74 accepted requests/second**, 20 VUs for 60s, 100% HTTP admission success, p95 175.03ms |
+| Single-Worker completed throughput | **3 offered RPS for 60s**, 181/181 successful synchronous E2E completions, Worker p95 809ms, public p95 1.67s |
+| Single-Worker overload boundary | **7 offered RPS**, completion saturated near 3.1 RPS with accumulating queue latency; not a stable-capacity claim |
 | Cgroup metric read | **15.5µs** average |
 | Metric collection vs. Docker API | **120,000x improvement** (`1994ms → 0.0155ms`) |
 
@@ -189,6 +191,7 @@ See the following resources for load-test conditions and interpretation:
 
 - [Performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY.md)
 - [Korean performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY_KOR.md)
+- [Post-hardening single-Worker E2E report](./tests/results/2026-08-10-worker-e2e-report.md)
 - [Cgroup benchmark](./tests/worker/benchmark_simple.py)
 - [Controller load tests](./tests/controller)
 
