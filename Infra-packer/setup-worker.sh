@@ -7,7 +7,7 @@ echo "[INFO] Starting Worker Setup..."
 dnf update -y
 
 # 2. Install Dependencies
-dnf install -y python3 python3-pip git docker unzip
+dnf install -y python3.11 git docker unzip
 
 # 3. Start Docker
 systemctl start docker
@@ -17,7 +17,7 @@ usermod -aG docker ec2-user
 # 4. Install Worker Code and Python Packages
 install -d -o ec2-user -g ec2-user /home/ec2-user/faas-worker
 cp -R /tmp/Infra-worker/. /home/ec2-user/faas-worker/
-python3 -m venv /home/ec2-user/faas-worker/.venv
+/usr/bin/python3.11 -m venv /home/ec2-user/faas-worker/.venv
 /home/ec2-user/faas-worker/.venv/bin/python -m pip install --upgrade pip
 /home/ec2-user/faas-worker/.venv/bin/python -m pip install -r /home/ec2-user/faas-worker/requirements.txt
 chown -R ec2-user:ec2-user /home/ec2-user/faas-worker

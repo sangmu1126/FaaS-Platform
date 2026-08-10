@@ -12,10 +12,6 @@ EnvironmentFile=/home/ec2-user/faas-worker/.env
 ExecStart=/home/ec2-user/faas-worker/.venv/bin/python /home/ec2-user/faas-worker/agent.py
 Restart=always
 RestartSec=10
-# 로그 설정
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=infra-worker
 
 [Install]
 WantedBy=multi-user.target
