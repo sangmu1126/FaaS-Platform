@@ -170,8 +170,8 @@ in the [performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY.md)
 | Cost reduction | Approximately $68/month → $23/month, a **66% reduction** |
 | Warm-pool function wakeup | **95% reduction, sub-100ms** |
 | Runtime initialization | Approximately **120ms** for native and **200ms** for interpreted runtimes |
-| Peak throughput | **520 requests/second** |
-| Sustained throughput | **241 requests/second, 0% error rate** |
+| Controller private ingress | **445.57 accepted requests/second**, 20 VUs for 10s, 100% HTTP admission success |
+| Public-path sustained ingress | **232.74 accepted requests/second**, 20 VUs for 60s, 100% HTTP admission success, p95 175.03ms |
 | Cgroup metric read | **15.5µs** average |
 | Metric collection vs. Docker API | **120,000x improvement** (`1994ms → 0.0155ms`) |
 
@@ -187,6 +187,7 @@ Cost comparison:
 See the following resources for load-test conditions and interpretation:
 
 - [Performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY.md)
+- [Korean performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY_KOR.md)
 - [Cgroup benchmark](./tests/worker/benchmark_simple.py)
 - [Controller load tests](./tests/controller)
 

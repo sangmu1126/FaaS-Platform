@@ -166,8 +166,8 @@ script는 `tests/`에 있으며 상세 분석은
 | 비용 절감 | 약 $68/month → $23/month, **66% 절감** |
 | Warm pool 함수 wakeup | **95% 감소, 100ms 미만** |
 | Runtime 초기화 | Native 약 **120ms**, interpreted runtime 약 **200ms** |
-| 최대 처리량 | **520 requests/second** |
-| 지속 처리량 | **241 requests/second, 오류율 0%** |
+| Controller 사설 Ingress | **445.57 accepted RPS**, 20 VU·10초, HTTP 수락 성공률 100% |
+| 공개 경로 지속 Ingress | **232.74 accepted RPS**, 20 VU·60초, HTTP 수락 성공률 100%, p95 175.03ms |
 | Cgroup metric 조회 | 평균 **15.5µs** |
 | Docker API 대비 metric 수집 | **120,000배 개선** (`1994ms → 0.0155ms`) |
 
@@ -183,6 +183,7 @@ script는 `tests/`에 있으며 상세 분석은
 Load test 조건과 해석은 다음 자료를 참고하십시오.
 
 - [성능 및 확장성 보고서](./REPORT_PERFORMANCE_SCALABILITY.md)
+- [한글 성능 및 확장성 보고서](./REPORT_PERFORMANCE_SCALABILITY_KOR.md)
 - [Cgroup benchmark](./tests/worker/benchmark_simple.py)
 - [Controller load test](./tests/controller)
 

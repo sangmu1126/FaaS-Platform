@@ -1,65 +1,214 @@
-# 🚀 FaaS Platform Performance & Scalability Report
-**(Final Verification - Jan 2026)**
+# Controller Ingress Performance Report
 
-## 1. Executive Summary
-This document serves as the final load testing report validating the performance, stability, and scalability of the `Infra-controller` and `Infra-worker`. Under significant resource constraints—running both the Controller and the Load Generator (k6) on a single `t3.small` instance—the architecture successfully demonstrated its efficiency, exceeding the baseline performance targets significantly.
+**Measured:** August 10, 2026<br>
+**Scope:** asynchronous request admission, not function execution completion
 
-| Metric | Legacy | Achieved | Improvement | Note |
-| :--- | :--- | :--- | :--- | :--- |
-| **Max Throughput** | 1.3 RPS | **520 RPS** | ▲ 400x | Enabled by Async/Non-blocking I/O |
-| **Stable Throughput** | - | **241 RPS** | ▲ 185x | With 3 Workers, **0%** Error Rate |
-| **Failover Rate** | 100% (Crash) | **0%** | Stable | Verified Rate Limiter & Graceful Handling |
-| **Latency (p95)** | 2.1s | **827ms** | ▼ 60% | End-to-End Duration (Including Queue) |
+## 1. Why this benchmark exists
 
-## 2. Test Scenarios & Results
+The platform deliberately separates request admission from function execution with
+SQS. A successful ingress request means that the Controller authenticated and
+validated the request, looked up the function in DynamoDB, successfully published an
+execution message to SQS, and returned a response. It does **not** mean that a Worker
+has completed the function.
 
-### Scenario A: Max Stress Test (System Limits)
-*   **Objective**: Identify the system's breaking point and verify Rate Limiter functionality.
-*   **Method**: High-volume request generation with 200 VUs (Ramping approach).
-*   **Results**:
-    *   **Peak RPS**: 520 req/sec (Resource limit of single t3.small instance)
-    *   **Rate Limit**: Traffic successfully throttled at 10,000 requests (No 429 failures).
-    *   **Positive Bottleneck Shift**: Backend bottlenecks were resolved via Worker scaling; the bottleneck shifted to the test instance (Controller) resource limits.
-    *   **Primary Bottleneck**: **Test Environment (Self-Hosted k6)**. CPU contention between the Load Generator and the Server was the limiting factor.
+The benchmark answers two bounded questions:
 
-### Scenario B: Stability Load Test (Operational Verification)
-*   **Objective**: Verify Service Level Agreement (SLA) compliance at target traffic (300 RPS).
-*   **Method**: Constant Arrival Rate (Sustained 300 RPS).
-*   **Results**:
-    *   **Success Rate**: **100% (0 Failures)**
-    *   **Actual Throughput**: 241 RPS (Worker saturation point with 3 instances)
-*   **Significance**: Throughput demonstrated linear growth with the addition of Workers, validating the system's ability to maintain stable service under load.
+1. How much asynchronous ingress can one Controller admit through its private API?
+2. What throughput and latency remain through the public user-facing path?
 
-## 3. Deep Dive Analysis
+Worker completion throughput, queue drain time, and submission-to-completion latency
+are separate measurements and are not claimed here.
 
-### A. "Why 520 RPS?" (Throughput Evaluation)
-The test environment, AWS `t3.small`, provides 2 vCPUs and 2GB RAM. While a single Node.js process is capable of handling thousands of RPS, the observed 520 RPS limit was due to **Environmental Constraints, not Code Limits**.
+## 2. What was measured
 
-1.  **Resource Contention**: The k6 process (load generation) and Node.js process (load handling) competed for the same CPU resources.
-2.  **Network Overhead**: Localhost loopback communication incurred kernel context switching overhead.
-*   **Conclusion**: Deploying the Controller and k6 on separate instances is expected to yield throughput exceeding 2,000 RPS.
+```mermaid
+flowchart LR
+    LG[Load Generator EC2\nc7i.large] -->|HTTP + API key| C[Controller EC2\nt3.micro]
+    U[Developer laptop] -->|HTTPS + bearer token| CF[CloudFront]
+    CF --> ALB[Application Load Balancer]
+    ALB --> BFF[BFF + authentication]
+    BFF --> C
+    C --> DDB[(DynamoDB\nfunction lookup)]
+    C --> SQS[(SQS\nexecution queue)]
+    SQS -. outside this report .-> W[Workers + containers]
 
-### B. "Is Worker Scalable?" (Scalability Evaluation)
-*   **1 Worker**: ~170 RPS (Worker CPU Saturated)
-*   **3 Workers**: ~241 RPS (Controller CPU Saturated)
-*   **Analysis**: Throughput increased with 3 Workers, but Ingestion consistency fluctuated in the 241~520 RPS range due to the Controller's CPU limits (shared with k6).
-*   **Conclusion**: The Worker bottleneck was effectively resolved, shifting the constraint to the Controller's Ingestion Capacity. This shift confirms successful Worker scalability, as the failure point moved upstream. (**Positive Bottleneck Shift**)
+    classDef measured fill:#e8f1ff,stroke:#2563eb,color:#111827;
+    class C,CF,ALB,BFF,DDB,SQS measured;
+```
 
-### C. Rate Limiting Implementation
-1.  **Lua Scripting on Redis**: Implemented via Redis Atomic Lua Scripts instead of application-level JavaScript, preventing race conditions and ensuring accurate request control.
-2.  **Dynamic Configuration**: Verified the system's support for dynamic limit adjustments via the `RATE_LIMIT` environment variable without requiring redeployment.
+### Success definition
 
-## 4. Conclusion
+- Private path: completed HTTP `202 Accepted`
+- Public path: completed HTTP `200 OK`; the BFF currently normalizes the upstream
+  Controller `202` response to `200`
+- The load generator counts a request only after its response finishes
+- `429`, `5xx`, timeout, and network errors are counted separately as failures
 
-> **"Production-Ready Architecture"**
+### Controlled conditions
 
-This project has verified, through quantitative data, that the system is a robust architecture capable of handling production-level traffic. The transition to an **Async Architecture** was the primary driver for performance improvements, supported by system-level optimizations such as Zero-Copy streaming and direct Cgroup management.
+- Function: `Ingress Benchmark` (`3141e3a4-dafe-43b0-8d55-628d1fbc3ddf`)
+- Request mode: asynchronous (`x-async: true` behind the BFF)
+- Request think time: `0ms`
+- Timeout: `5,000ms`
+- The SQS queue and DLQ were checked before runs
+- Controller rate limiting was temporarily raised from `3,000` to `1,000,000` so
+  capacity results were not token-bucket-policy results
+- The rate limit was restored to `3,000` after testing
 
----
+## 3. How it was measured
 
-### [Appendix] Summary Metrics
+The previous custom generator incremented its RPS counter when a request was started
+and did not wait for in-flight requests before exiting. That number represented
+offered load rather than completed throughput.
 
-*   **Architecture**: Event-Driven Async I/O (Node.js + SQS)
-*   **Throughput**: 300+ RPS Stable / 520+ RPS Peak (per unit)
-*   **Scalability**: Positive Bottleneck Shift verified (Worker bottleneck resolved)
-*   **Security**: VPC Isolation & Rate Limiting verified
+The revised generator uses a closed workload model:
+
+```mermaid
+sequenceDiagram
+    participant VU as Virtual user
+    participant API as API path
+    participant Q as SQS
+
+    loop Until the configured duration ends
+        VU->>API: POST /api/run
+        API->>Q: await SendMessage
+        Q-->>API: success
+        API-->>VU: completed 200/202 response
+        Note over VU: Count status and latency
+    end
+    Note over VU: Drain every in-flight request before reporting
+```
+
+The implementation is in
+[`application/backend/scripts/stress_test.js`](./application/backend/scripts/stress_test.js).
+The optional Terraform-managed load generator is isolated from the Controller and
+accesses port `8080` through a security-group reference, not a public ingress rule.
+
+## 4. Results
+
+### 4.1 Private Controller ingress
+
+| Concurrency | Duration | Completed | Accepted RPS | Success | Average | p95 | p99 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 VU | 30s | 2,205 | 73.48 | 100% | 13.53ms | 16.26ms | 33.74ms |
+| **20 VU** | **10s** | **4,466** | **445.57** | **100%** | **44.78ms** | **71.15ms** | **105.52ms** |
+| 30 VU | 10s | 4,077 | 406.54 | 100% | 73.66ms | 120.22ms | 156.25ms |
+| 50 VU | 10s | 4,270 | 424.06 | 100% | 117.48ms | 173.88ms | 361.49ms |
+
+Throughput did not improve above 20 VUs, while average and tail latency increased.
+This identifies the 20–50 VU range as a saturation region for this Controller and
+test path. The strongest defensible statement is therefore:
+
+> One Controller admitted 445.57 requests/second for 10 seconds at 20 VUs with a
+> 100% HTTP admission success rate and 71.15ms p95 latency.
+
+This is the highest **short-run measured** result, not a long-duration maximum.
+
+### 4.2 Public service path
+
+| Concurrency | Duration | Completed | Accepted RPS | HTTP success | Average | p95 | p99 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20 VU | 10s | 2,077 | 205.64 | 100% | 96.46ms | 193.93ms | 263.99ms |
+| **20 VU** | **60s** | **13,981** | **232.74** | **100%** | **85.80ms** | **175.03ms** | **262.87ms** |
+
+The 60-second run is the sustained public-path result:
+
+> The public CloudFront–ALB–BFF–Controller path admitted 13,981 asynchronous
+> requests over 60 seconds at 232.74 requests/second, with 100% HTTP admission
+> success and 175.03ms p95 latency.
+
+### 4.3 Path comparison
+
+The comparable 20-VU short runs show the cost of the public path:
+
+```mermaid
+xychart-beta
+    title "20 VU asynchronous ingress"
+    x-axis ["Controller private", "Public path"]
+    y-axis "Accepted requests/second" 0 --> 500
+    bar [445.57, 205.64]
+```
+
+- Short-run throughput: `445.57 → 205.64 RPS` (**53.8% lower**)
+- p95 latency: `71.15 → 193.93ms` (**2.73x higher**)
+- Added path: internet/TLS, CloudFront, ALB, BFF proxying, and user authentication
+
+This comparison isolates the aggregate cost of those layers; it does not attribute
+the difference to one component without component-level profiling.
+
+## 5. What the results mean
+
+### Proven
+
+- The Controller can admit asynchronous work faster than Workers need to execute it.
+- SQS decouples admission from execution and absorbs the difference as backlog.
+- The private Controller path completed 4,466 admissions without an HTTP failure in
+  the best short run.
+- The public path sustained 232.74 accepted RPS for 60 seconds with no HTTP admission
+  failures.
+- The Controller and BFF remained healthy after the sustained run, and the DLQ was
+  empty at the post-test check.
+
+### Not proven by this report
+
+- Worker function executions per second
+- End-to-end function completion success rate
+- Submission-to-completion latency
+- Queue drain time
+- A 650 or 1,400 completed-response RPS result
+- A 500x improvement over a comparable baseline
+
+Messages remaining in SQS after a run do not invalidate Controller ingress results:
+the measured boundary ends after a successful `SendMessage` and HTTP response. They
+do mean that the same run cannot be described as end-to-end function throughput.
+
+## 6. Operational findings
+
+1. **Rate limiting works independently of capacity.** At the default `RATE_LIMIT=3000`,
+   the Redis token bucket allows an initial 3,000-request burst and refills at about
+   50 requests/second. A 20-VU smoke run produced 3,470 accepted responses and 1,567
+   `429` responses, matching that policy. Capacity tests therefore used a temporary
+   high limit and restored the default afterward.
+2. **The public BFF changes async response semantics.** It currently exposes a
+   Controller `202` admission as HTTP `200`. Preserving `202` would make the public API
+   contract clearer.
+3. **The queue and Workers need separate reporting.** Backlog growth is expected when
+   ingress is faster than execution. Worker throughput and drain time are the next
+   benchmarks required for a complete system-capacity claim.
+
+## 7. Reproduction
+
+Create the optional load generator:
+
+```bash
+terraform -chdir=Infra-terraform apply -var='enable_load_generator=true'
+```
+
+Run the private test through SSM:
+
+```bash
+TARGET_FUNCTION_ID='<function-id>' \
+LOAD_TEST_CONCURRENCY=20 \
+LOAD_TEST_DURATION=10 \
+/opt/faas-load-test/run-private.sh
+```
+
+Run the public test from an external client:
+
+```bash
+LOAD_TEST_AUTH_TOKEN='<bearer-token>' \
+LOAD_TEST_PROTOCOL=https \
+LOAD_TEST_TARGET_HOST='<cloudfront-domain>' \
+LOAD_TEST_TARGET_PORT=443 \
+LOAD_TEST_PATH=/api/run \
+TARGET_FUNCTION_ID='<function-id>' \
+LOAD_TEST_CONCURRENCY=20 \
+LOAD_TEST_DURATION=60 \
+node application/backend/scripts/stress_test.js
+```
+
+Remove the temporary generator after testing:
+
+```bash
+terraform -chdir=Infra-terraform apply -var='enable_load_generator=false'
+```
