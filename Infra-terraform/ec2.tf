@@ -65,6 +65,18 @@ resource "aws_security_group" "controller_sg" {
     security_groups = [aws_security_group.bff_alb.id]
   }
 
+  dynamic "ingress" {
+    for_each = var.enable_load_generator ? [1] : []
+
+    content {
+      description     = "Temporary private ingress benchmark traffic"
+      from_port       = 8080
+      to_port         = 8080
+      protocol        = "tcp"
+      security_groups = [aws_security_group.load_generator[0].id]
+    }
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
