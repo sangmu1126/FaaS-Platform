@@ -238,3 +238,43 @@ measurement.
 
 Full conditions, historical comparison, cross-checks, and interpretation are in the
 [single-Worker E2E report](./tests/results/2026-08-10-worker-e2e-report.md).
+
+## 9. Cost architecture evolution
+
+The historical `approximately $68/month → $23/month` estimate belongs to the initial
+lean architecture. It is retained as a project decision record, but it is not the
+monthly total of the current portfolio deployment.
+
+```mermaid
+flowchart LR
+    B[Standard baseline\nNAT Gateway + ALB\n~$68/month] --> I[Initial lean design\nS3/DynamoDB Gateway EP\nSQS Interface EP\nEIP + heartbeat\n~$23/month]
+    I --> C[Current portfolio design\nPrivate SSM and CloudWatch access\n2 AZ endpoint placement\nALB + CloudFront]
+```
+
+| Stage | Gateway Endpoints | Interface Endpoint services | AZ placement | Public path | Cost objective |
+|---|---|---:|---:|---|---|
+| Initial lean design | S3, DynamoDB | SQS only | 2 AZs | EIP + heartbeat | Minimize fixed networking cost |
+| Current portfolio design | S3, DynamoDB | SQS, SSM, EC2 Messages, SSM Messages, CloudWatch Monitoring, CloudWatch Logs | 2 AZs | CloudFront + ALB/BFF | Private management, observability, and reproducible public demo |
+
+S3 and DynamoDB Gateway Endpoints have no additional endpoint charge. Interface
+Endpoints are charged for each endpoint provisioned in each AZ plus processed data.
+Consequently:
+
+```text
+Initial Interface Endpoint footprint: 1 service × 2 AZs = 2 billed attachments
+Current Interface Endpoint footprint: 6 services × 2 AZs = 12 billed attachments
+Monthly fixed component: attachment count × regional hourly price × usage hours
+```
+
+The initial endpoint set could therefore cost less than one continuously provisioned
+NAT Gateway. After SSM and CloudWatch private endpoints and the public ALB were added,
+that conclusion no longer follows: the current design deliberately trades additional
+fixed cost for private administration, telemetry, Multi-AZ placement, and a stable
+public access path. Any current monthly total must be recalculated with the AWS
+Pricing Calculator or billing data for `ap-northeast-2`.
+
+Pricing references:
+
+- [AWS Gateway Endpoints — no additional endpoint charge](https://docs.aws.amazon.com/vpc/latest/privatelink/gateway-endpoints.html)
+- [AWS PrivateLink pricing — Interface Endpoint hours and data processing](https://aws.amazon.com/privatelink/pricing/)
+- [AWS NAT Gateway pricing model](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-pricing.html)

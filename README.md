@@ -168,7 +168,7 @@ in the [performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY.md)
 
 | Item | Measured result |
 |---|---:|
-| Cost reduction | Approximately $68/month → $23/month, a **66% reduction** |
+| Historical cost optimization | Approximately $68/month → $23/month, a **66% reduction** in the initial lean architecture; **not the current deployment total** |
 | Warm-pool function wakeup | **95% reduction, sub-100ms** |
 | Runtime initialization | Approximately **120ms** for native and **200ms** for interpreted runtimes |
 | Controller private ingress | **445.57 accepted requests/second**, 20 VUs for 10s, 100% HTTP admission success |
@@ -178,14 +178,18 @@ in the [performance and scalability report](./REPORT_PERFORMANCE_SCALABILITY.md)
 | Cgroup metric read | **15.5µs** average |
 | Metric collection vs. Docker API | **120,000x improvement** (`1994ms → 0.0155ms`) |
 
-Cost comparison:
+Cost evolution:
 
-| Component | Standard approach | Current approach | Measured estimate |
-|---|---|---|---:|
-| NAT Gateway | Managed NAT Gateway | VPC Endpoints | $32/month savings |
-| Load Balancer | ALB | EIP + heartbeat/self-healing | $20/month savings |
-| Recovery | Manual replacement | ASG + pre-built AMI | Lower operational overhead |
-| Total | Approximately $68/month | Approximately $23/month | **66% reduction** |
+| Architecture stage | Network design | Purpose and cost interpretation |
+|---|---|---|
+| Standard baseline | NAT Gateway + ALB | Historical comparison baseline, approximately $68/month |
+| Initial lean optimization | Free S3/DynamoDB Gateway Endpoints, SQS Interface Endpoint, EIP + heartbeat recovery | Historical estimate of approximately $23/month (**66% lower**); VPC Endpoint replacement was cheaper than NAT for this limited service set |
+| Current portfolio deployment | The same Gateway Endpoints plus SQS, three SSM, and two CloudWatch Interface Endpoints across two AZs; ALB + CloudFront public path | Optimizes private operability and reproducible demonstration, not minimum monthly cost; the historical $23 total does not apply |
+
+The current six Interface Endpoint services span two AZs, producing 12 billable
+endpoint-AZ attachments. Their fixed cost is therefore `12 × regional endpoint hourly
+price × hours`, versus two attachments for the initial SQS-only Interface Endpoint.
+See the detailed report for assumptions and AWS pricing links.
 
 See the following resources for load-test conditions and interpretation:
 

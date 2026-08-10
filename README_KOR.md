@@ -164,7 +164,7 @@ script는 `tests/`에 있으며 상세 분석은
 
 | 항목 | 측정 결과 |
 |---|---:|
-| 비용 절감 | 약 $68/month → $23/month, **66% 절감** |
+| 초기 비용 최적화 | 초기 경량 아키텍처에서 약 $68/month → $23/month, **66% 절감**; **현재 배포 총액은 아님** |
 | Warm pool 함수 wakeup | **95% 감소, 100ms 미만** |
 | Runtime 초기화 | Native 약 **120ms**, interpreted runtime 약 **200ms** |
 | Controller 사설 Ingress | **445.57 accepted RPS**, 20 VU·10초, HTTP 수락 성공률 100% |
@@ -174,14 +174,18 @@ script는 `tests/`에 있으며 상세 분석은
 | Cgroup metric 조회 | 평균 **15.5µs** |
 | Docker API 대비 metric 수집 | **120,000배 개선** (`1994ms → 0.0155ms`) |
 
-비용 비교:
+비용 구조 변화:
 
-| 구성 요소 | 일반적인 방식 | 현재 방식 | 측정 추정치 |
-|---|---|---|---:|
-| NAT Gateway | Managed NAT Gateway | VPC Endpoint | $32/month 절감 |
-| Load Balancer | ALB | EIP + heartbeat/self-healing | $20/month 절감 |
-| 복구 | 수동 교체 | ASG + 사전 제작 AMI | 운영 관리 비용 감소 |
-| 전체 | 약 $68/month | 약 $23/month | **66% 절감** |
+| 아키텍처 단계 | 네트워크 구성 | 목적과 비용 해석 |
+|---|---|---|
+| 일반 구성 기준선 | NAT Gateway + ALB | 과거 비교 기준, 약 $68/month |
+| 초기 경량 최적화 | 무료 S3·DynamoDB Gateway Endpoint, SQS Interface Endpoint, EIP + heartbeat 복구 | 약 $23/month로 산정한 과거 구성(**66% 절감**). 제한된 Endpoint 집합에서는 NAT보다 저렴했음 |
+| 현재 포트폴리오 배포 | 기존 Gateway Endpoint + SQS·SSM 3종·CloudWatch 2종 Interface Endpoint를 2 AZ에 배치, ALB + CloudFront 공개 경로 | 최소 비용보다 private 운영성과 재현 가능한 시연을 우선. 과거 $23 총액을 현재 구성에 적용하지 않음 |
+
+현재 Interface Endpoint는 6개 서비스가 2 AZ에 걸쳐 있으므로 총 12개의 과금
+endpoint-AZ 연결이 생깁니다. 고정비 계산식은 `12 × 리전별 Endpoint 시간 단가 × 사용
+시간`이며, 초기 SQS-only 구성은 2개 연결이었습니다. 가정과 AWS 공식 요금 링크는 상세
+보고서에 구분해 두었습니다.
 
 Load test 조건과 해석은 다음 자료를 참고하십시오.
 

@@ -25,7 +25,7 @@ resource "aws_vpc_endpoint" "dynamodb" {
   }
 }
 
-# 3. SQS Interface Endpoint (~$7/month)
+# 3. SQS Interface Endpoint (billed per endpoint-AZ hour and processed GB)
 resource "aws_security_group" "vpc_endpoints" {
   name        = "${var.project_name}-vpce-sg"
   description = "Security group for VPC endpoints"

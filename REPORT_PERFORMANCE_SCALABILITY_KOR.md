@@ -192,3 +192,41 @@ runner/SDK 주입 113.97ms, 출력 회수 107.34ms가 대부분을 차지했다.
 
 전체 조건, 수정 전 기준선, 교차 검증과 해석은
 [단일 Worker E2E 상세 보고서](./tests/results/2026-08-10-worker-e2e-report.md)에 정리했다.
+
+## 9. 비용 아키텍처 변화
+
+기존 `약 $68/month → $23/month` 산정은 초기 경량 아키텍처에 해당한다. 프로젝트의
+비용 최적화 의사결정 기록으로 유지하지만 현재 포트폴리오 배포의 월 총액으로 사용하지
+않는다.
+
+```mermaid
+flowchart LR
+    B[일반 구성 기준선\nNAT Gateway + ALB\n약 $68/month] --> I[초기 경량 구성\nS3·DynamoDB Gateway EP\nSQS Interface EP\nEIP + heartbeat\n약 $23/month]
+    I --> C[현재 포트폴리오 구성\nSSM·CloudWatch private 연결\n2 AZ Endpoint\nALB + CloudFront]
+```
+
+| 단계 | Gateway Endpoint | Interface Endpoint 서비스 | AZ 배치 | 공개 경로 | 비용 목적 |
+|---|---|---:|---:|---|---|
+| 초기 경량 구성 | S3, DynamoDB | SQS만 사용 | 2 AZ | EIP + heartbeat | 네트워크 고정비 최소화 |
+| 현재 포트폴리오 구성 | S3, DynamoDB | SQS, SSM, EC2 Messages, SSM Messages, CloudWatch Monitoring, CloudWatch Logs | 2 AZ | CloudFront + ALB/BFF | private 운영, 관측성, 재현 가능한 공개 시연 |
+
+S3와 DynamoDB Gateway Endpoint에는 별도 Endpoint 요금이 없다. Interface Endpoint는
+Endpoint를 배치한 AZ별 시간 요금과 데이터 처리 요금이 발생한다.
+
+```text
+초기 Interface Endpoint 규모: 1개 서비스 × 2 AZ = 2개 과금 연결
+현재 Interface Endpoint 규모: 6개 서비스 × 2 AZ = 12개 과금 연결
+월 고정비 요소: 연결 수 × 리전별 시간 단가 × 사용 시간
+```
+
+따라서 초기 Endpoint 집합은 상시 NAT Gateway 1대보다 저렴할 수 있었다. 이후 SSM과
+CloudWatch private Endpoint 및 공개 ALB를 추가한 현재 구성에는 같은 결론을 적용할 수
+없다. 현재 설계는 최소 비용 대신 private 관리, telemetry, Multi-AZ 배치, 안정적인 공개
+접속 경로를 위해 추가 고정비를 선택한 구성이다. 현재 월 총액은 `ap-northeast-2` 기준
+AWS Pricing Calculator 또는 실제 청구 데이터로 다시 계산해야 한다.
+
+요금 근거:
+
+- [AWS Gateway Endpoint — 별도 Endpoint 요금 없음](https://docs.aws.amazon.com/vpc/latest/privatelink/gateway-endpoints.html)
+- [AWS PrivateLink — Interface Endpoint 시간·데이터 처리 요금](https://aws.amazon.com/privatelink/pricing/)
+- [AWS NAT Gateway 요금 구조](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-pricing.html)
