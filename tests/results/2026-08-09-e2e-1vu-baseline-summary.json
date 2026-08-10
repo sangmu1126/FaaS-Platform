@@ -1,0 +1,165 @@
+{
+    "metrics": {
+        "http_req_blocked": {
+            "p(95)": 7.364899999999941,
+            "avg": 3.8758947368421066,
+            "min": 0,
+            "med": 0.001,
+            "max": 73.622,
+            "p(90)": 0.0022000000000000006
+        },
+        "faas_handler_duration_ms": {
+            "avg": 500.6125789473684,
+            "min": 500.581,
+            "med": 500.612,
+            "max": 500.661,
+            "p(90)": 500.62719999999996,
+            "p(95)": 500.6349
+        },
+        "checks": {
+            "passes": 38,
+            "fails": 0,
+            "value": 1
+        },
+        "http_req_receiving": {
+            "p(90)": 0.21080000000000004,
+            "p(95)": 0.3091999999999999,
+            "avg": 0.14584210526315788,
+            "min": 0.047,
+            "med": 0.133,
+            "max": 0.41
+        },
+        "iteration_duration": {
+            "med": 1613.291209,
+            "max": 1770.831625,
+            "p(90)": 1744.1839418,
+            "p(95)": 1754.2456006,
+            "avg": 1643.0415503157894,
+            "min": 1536.522583
+        },
+        "iterations": {
+            "count": 19,
+            "rate": 0.6086238930492781
+        },
+        "faas_worker_duration_ms": {
+            "med": 1196,
+            "max": 1238,
+            "p(90)": 1222,
+            "p(95)": 1234.4,
+            "avg": 1193.1052631578948,
+            "min": 1134
+        },
+        "vus": {
+            "value": 1,
+            "min": 1,
+            "max": 1
+        },
+        "http_reqs": {
+            "count": 19,
+            "rate": 0.6086238930492781
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 19,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "data_received": {
+            "count": 27321,
+            "rate": 875.1691253683856
+        },
+        "http_req_duration": {
+            "avg": 1638.2690000000002,
+            "min": 1535.714,
+            "med": 1612.468,
+            "max": 1751.558,
+            "p(90)": 1727.7202,
+            "p(95)": 1742.6183
+        },
+        "data_sent": {
+            "rate": 169.87013183370115,
+            "count": 5303
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(90)": 1727.7202,
+            "p(95)": 1742.6183,
+            "avg": 1638.2690000000002,
+            "min": 1535.714,
+            "med": 1612.468,
+            "max": 1751.558
+        },
+        "http_req_connecting": {
+            "p(95)": 1.909099999999985,
+            "avg": 1.0047894736842107,
+            "min": 0,
+            "med": 0,
+            "max": 19.091,
+            "p(90)": 0
+        },
+        "http_req_sending": {
+            "avg": 0.2650526315789474,
+            "min": 0.077,
+            "med": 0.244,
+            "max": 0.714,
+            "p(90)": 0.38600000000000007,
+            "p(95)": 0.49079999999999985
+        },
+        "vus_max": {
+            "value": 1,
+            "min": 1,
+            "max": 1
+        },
+        "faas_function_success": {
+            "passes": 19,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "http_req_tls_handshaking": {
+            "avg": 1.4179473684210526,
+            "min": 0,
+            "med": 0,
+            "max": 26.941,
+            "p(90)": 0,
+            "p(95)": 2.6940999999999784
+        },
+        "http_req_waiting": {
+            "min": 1535.214,
+            "med": 1611.871,
+            "max": 1750.825,
+            "p(90)": 1727.3898,
+            "p(95)": 1742.1634,
+            "avg": 1637.858105263158
+        },
+        "faas_completed": {
+            "count": 19,
+            "rate": 0.6086238930492781
+        }
+    },
+    "root_group": {
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "HTTP 200": {
+                    "fails": 0,
+                    "name": "HTTP 200",
+                    "path": "::HTTP 200",
+                    "id": "b70aee8a9f7a77d66dd70844a901558a",
+                    "passes": 19
+                },
+                "function completed successfully": {
+                    "path": "::function completed successfully",
+                    "id": "7e36f4f248312b4e4fc8a28712d83634",
+                    "passes": 19,
+                    "fails": 0,
+                    "name": "function completed successfully"
+                }
+            },
+        "name": ""
+    }
+}

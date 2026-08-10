@@ -1,0 +1,165 @@
+{
+    "metrics": {
+        "http_req_tls_handshaking": {
+            "med": 0,
+            "max": 35.866,
+            "p(90)": 22.992,
+            "p(95)": 30.46949999999999,
+            "avg": 7.9350645161290325,
+            "min": 0
+        },
+        "http_reqs": {
+            "count": 31,
+            "rate": 0.9457445567748304
+        },
+        "http_req_waiting": {
+            "med": 2812.11,
+            "max": 3825.042,
+            "p(90)": 3646.493,
+            "p(95)": 3726.6955,
+            "avg": 2822.5785483870973,
+            "min": 1779.302
+        },
+        "faas_handler_duration_ms": {
+            "p(90)": 500.632,
+            "p(95)": 500.67249999999996,
+            "avg": 500.5900322580643,
+            "min": 500.169,
+            "med": 500.619,
+            "max": 500.715
+        },
+        "faas_completed": {
+            "count": 31,
+            "rate": 0.9457445567748304
+        },
+        "data_sent": {
+            "count": 24314,
+            "rate": 741.7688114007492
+        },
+        "data_received": {
+            "count": 96329,
+            "rate": 2938.7944325665367
+        },
+        "faas_function_success": {
+            "passes": 31,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 31,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "checks": {
+            "passes": 62,
+            "fails": 0,
+            "value": 1
+        },
+        "vus": {
+            "min": 1,
+            "max": 3,
+            "value": 2
+        },
+        "http_req_connecting": {
+            "avg": 5.268451612903225,
+            "min": 0,
+            "med": 0,
+            "max": 30.017,
+            "p(90)": 14.432,
+            "p(95)": 21.672499999999996
+        },
+        "http_req_receiving": {
+            "avg": 0.16609677419354837,
+            "min": 0.037,
+            "med": 0.129,
+            "max": 0.713,
+            "p(90)": 0.216,
+            "p(95)": 0.4875
+        },
+        "faas_worker_duration_ms": {
+            "p(95)": 1547.5,
+            "avg": 1423.258064516129,
+            "min": 1176,
+            "med": 1451,
+            "max": 1564,
+            "p(90)": 1533
+        },
+        "http_req_blocked": {
+            "min": 0,
+            "med": 0.001,
+            "max": 66.033,
+            "p(90)": 46.811,
+            "p(95)": 59.501499999999986,
+            "avg": 14.313129032258054
+        },
+        "iterations": {
+            "rate": 0.9457445567748304,
+            "count": 31
+        },
+        "vus_max": {
+            "value": 10,
+            "min": 10,
+            "max": 10
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 2823.1567741935482,
+            "min": 1780.854,
+            "med": 2812.655,
+            "max": 3825.29,
+            "p(90)": 3646.969,
+            "p(95)": 3727.3574999999996
+        },
+        "http_req_duration": {
+            "avg": 2823.1567741935482,
+            "min": 1780.854,
+            "med": 2812.655,
+            "max": 3825.29,
+            "p(90)": 3646.969,
+            "p(95)": 3727.3574999999996
+        },
+        "iteration_duration": {
+            "avg": 2838.4358710645165,
+            "min": 1848.331333,
+            "med": 2826.029667,
+            "max": 3826.081625,
+            "p(90)": 3647.80875,
+            "p(95)": 3727.9914165
+        },
+        "http_req_sending": {
+            "max": 1.588,
+            "p(90)": 1.059,
+            "p(95)": 1.5685,
+            "avg": 0.4121290322580646,
+            "min": 0.087,
+            "med": 0.292
+        }
+    },
+    "root_group": {
+        "checks": {
+            "HTTP 200": {
+                "name": "HTTP 200",
+                "path": "::HTTP 200",
+                "id": "b70aee8a9f7a77d66dd70844a901558a",
+                "passes": 31,
+                "fails": 0
+            },
+            "function completed successfully": {
+                "name": "function completed successfully",
+                "path": "::function completed successfully",
+                "id": "7e36f4f248312b4e4fc8a28712d83634",
+                "passes": 31,
+                "fails": 0
+            }
+        },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {}
+    }
+}
