@@ -117,6 +117,10 @@ class TaskExecutor:
                 container,
                 required_files.get(task.runtime, required_files["python"])
             )
+
+            # Establish the trusted process baseline after setup commands have
+            # completed and before any user-controlled code starts.
+            baseline_processes = self.containers.get_process_ids(container)
             
             cmd, env_vars = self._build_command(task, use_payload_file)
             
@@ -128,7 +132,6 @@ class TaskExecutor:
             start_dr, start_dw = self.containers.get_disk_stats(container.id)
             
             exit_code, output_bytes = self._execute_in_container(container, cmd, env_vars, task.timeout_ms, host_output_dir)
-            container_reusable = True
             
             # Metrics & Cleanup
             end_cpu = self.containers.get_cgroup_cpu_usage(container.id)
@@ -167,6 +170,29 @@ class TaskExecutor:
             
             # Extract LLM Usage
             llm_tokens = self._read_llm_usage(host_output_dir)
+
+            # Docker init reaps exited children, while this comparison catches
+            # user processes that are still alive after the handler returns.
+            # Fail closed when inspection is unavailable: an unverified
+            # container must not cross invocation boundaries through the pool.
+            final_processes = self.containers.get_process_ids(container)
+            residual_processes = (
+                final_processes - baseline_processes
+                if baseline_processes is not None and final_processes is not None
+                else None
+            )
+            container_reusable = residual_processes == frozenset()
+            if residual_processes is None:
+                logger.warning(
+                    "Container process state could not be verified; discarding",
+                    container_id=container.id
+                )
+            elif residual_processes:
+                logger.warning(
+                    "Residual user processes detected; discarding container",
+                    container_id=container.id,
+                    process_ids=sorted(residual_processes)
+                )
 
             # Background Upload & Reporting
             self._trigger_background_reporting(

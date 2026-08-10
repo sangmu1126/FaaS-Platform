@@ -66,6 +66,9 @@ class ContainerManager:
             # Run infinite wait container
             c = self.docker.containers.run(
                 img, command="tail -f /dev/null", detach=True,
+                # Use Docker's tiny init as PID 1 so orphaned children are
+                # adopted and reaped instead of accumulating as zombies.
+                init=True,
                 network_mode="bridge",
                 mem_limit="1024m",
                 cpu_quota=100000,
@@ -88,6 +91,30 @@ class ContainerManager:
             return c.id
         except Exception as e:
             logger.error("Failed to create warm container", runtime=runtime, error=str(e))
+            return None
+
+    def get_process_ids(self, container) -> Optional[frozenset]:
+        """Return the current container PIDs, or None when inspection fails.
+
+        A snapshot is taken immediately before and after each invocation. Any
+        PID added by user code makes the container unsafe to return to a warm
+        pool. PID values are sufficient here because the container is leased
+        exclusively for the duration of an invocation.
+        """
+        try:
+            process_table = container.top(ps_args="-eo pid=")
+            processes = process_table.get("Processes", [])
+            return frozenset(
+                int(row[0].strip())
+                for row in processes
+                if row and str(row[0]).strip()
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to inspect container processes",
+                container_id=getattr(container, "id", "unknown"),
+                error=str(e)
+            )
             return None
 
     def acquire_container(self, runtime: str, function_id: str = None):
