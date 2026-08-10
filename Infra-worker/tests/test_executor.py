@@ -274,7 +274,7 @@ class TestContainerArchiveCopy(unittest.TestCase):
             self.manager.get_process_ids(self.container),
             frozenset({1, 42, 105})
         )
-        self.container.top.assert_called_once_with(ps_args="-eo pid=")
+        self.container.top.assert_called_once_with(ps_args="-eo pid")
 
     def test_process_snapshot_fails_closed(self):
         self.container.top.side_effect = RuntimeError("Docker API unavailable")

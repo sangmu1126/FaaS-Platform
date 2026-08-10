@@ -102,7 +102,10 @@ class ContainerManager:
         exclusively for the duration of an invocation.
         """
         try:
-            process_table = container.top(ps_args="-eo pid=")
+            # Keep the PID column header. Docker's /containers/{id}/top API
+            # locates the PID field from the ps header and returns HTTP 500
+            # when the trailing '=' suppresses it ("Couldn't find PID field").
+            process_table = container.top(ps_args="-eo pid")
             processes = process_table.get("Processes", [])
             return frozenset(
                 int(row[0].strip())
