@@ -14,6 +14,7 @@ import tempfile
 import io
 import tarfile
 import json
+from collections import deque
 from unittest.mock import patch
 
 # Add parent directory to path to import modules
@@ -59,6 +60,7 @@ class TestTaskExecutor(unittest.TestCase):
         self.mock_containers.get_network_stats.return_value = (0, 0)
         self.mock_containers.get_disk_stats.return_value = (0, 0)
         self.mock_containers.get_cgroup_memory_peak.return_value = 1024 * 1024 * 50 # 50MB
+        self.mock_containers.get_process_ids.return_value = frozenset({1, 2})
         
         # Set return value for metrics analysis
         self.mock_metrics.analyze_execution.return_value = (None, None, None)
@@ -122,6 +124,53 @@ class TestTaskExecutor(unittest.TestCase):
         
         # Cleanup
         self.mock_containers.release_container.assert_called_with(mock_container, "func-1")
+
+    def test_residual_process_discards_completed_container(self):
+        task = TaskMessage(
+            request_id="req-residual", function_id="func-1", runtime="python", s3_key="key"
+        )
+        mock_container = MagicMock()
+        mock_container.id = "container-residual"
+        mock_container.is_warm = False
+        self.mock_containers.acquire_container.return_value = mock_container
+        self.mock_containers.get_process_ids.side_effect = [
+            frozenset({1, 2}),
+            frozenset({1, 2, 99}),
+        ]
+
+        work_dir = Path(self.test_dir.name) / "residual_req"
+        work_dir.mkdir()
+        self.mock_storage.prepare_workspace.return_value = work_dir
+
+        with patch.object(self.executor, '_execute_in_container', return_value=(0, b"Success")):
+            with patch.object(self.executor, '_read_llm_usage', return_value=0):
+                result = self.executor.run(task)
+
+        self.assertTrue(result.success)
+        self.mock_containers.discard_container.assert_called_once_with(mock_container)
+        self.mock_containers.release_container.assert_not_called()
+
+    def test_unavailable_process_snapshot_discards_completed_container(self):
+        task = TaskMessage(
+            request_id="req-unverified", function_id="func-1", runtime="python", s3_key="key"
+        )
+        mock_container = MagicMock()
+        mock_container.id = "container-unverified"
+        mock_container.is_warm = False
+        self.mock_containers.acquire_container.return_value = mock_container
+        self.mock_containers.get_process_ids.side_effect = [None, None]
+
+        work_dir = Path(self.test_dir.name) / "unverified_req"
+        work_dir.mkdir()
+        self.mock_storage.prepare_workspace.return_value = work_dir
+
+        with patch.object(self.executor, '_execute_in_container', return_value=(0, b"Success")):
+            with patch.object(self.executor, '_read_llm_usage', return_value=0):
+                result = self.executor.run(task)
+
+        self.assertTrue(result.success)
+        self.mock_containers.discard_container.assert_called_once_with(mock_container)
+        self.mock_containers.release_container.assert_not_called()
 
     def test_run_success_warm_start(self):
         # Setup Task
@@ -214,6 +263,42 @@ class TestContainerArchiveCopy(unittest.TestCase):
         self.assertIsInstance(payload, bytes)
         with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
             self.assertEqual(sorted(archive.getnames()), ["main.py", "runner.py"])
+
+    def test_process_snapshot_returns_container_pids(self):
+        self.container.top.return_value = {
+            "Titles": ["PID"],
+            "Processes": [["1"], ["42"], ["105"]],
+        }
+
+        self.assertEqual(
+            self.manager.get_process_ids(self.container),
+            frozenset({1, 42, 105})
+        )
+        self.container.top.assert_called_once_with(ps_args="-eo pid=")
+
+    def test_process_snapshot_fails_closed(self):
+        self.container.top.side_effect = RuntimeError("Docker API unavailable")
+
+        self.assertIsNone(self.manager.get_process_ids(self.container))
+
+    def test_warm_container_uses_docker_init(self):
+        self.manager.docker = MagicMock()
+        self.manager.pools = {
+            "python": deque(),
+            "nodejs": deque(),
+            "cpp": deque(),
+            "go": deque(),
+        }
+        self.manager.pid_cache = {}
+        created = MagicMock()
+        created.id = "container-with-init"
+        created.attrs = {"State": {"Pid": 1234}}
+        self.manager.docker.containers.run.return_value = created
+
+        container_id = self.manager._create_warm_container("python")
+
+        self.assertEqual(container_id, "container-with-init")
+        self.assertTrue(self.manager.docker.containers.run.call_args.kwargs["init"])
 
     def test_copy_raises_when_docker_rejects_archive(self):
         self.container.put_archive.return_value = False
