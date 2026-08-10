@@ -1,7 +1,7 @@
-# Controller Ingress Performance Report
+# FaaS Performance and Scalability Verification Report
 
-**Measured:** August 10, 2026<br>
-**Scope:** asynchronous request admission, not function execution completion
+**Measured:** August 9–10, 2026<br>
+**Scope:** asynchronous request admission and separately measured synchronous function completion
 
 ## 1. Why this benchmark exists
 
@@ -16,8 +16,9 @@ The benchmark answers two bounded questions:
 1. How much asynchronous ingress can one Controller admit through its private API?
 2. What throughput and latency remain through the public user-facing path?
 
-Worker completion throughput, queue drain time, and submission-to-completion latency
-are separate measurements and are not claimed here.
+Sections 1–7 cover asynchronous admission only. Section 8 and the linked Worker E2E
+report cover function completion, queue drain, and submission-to-completion latency
+as a separate measurement boundary.
 
 ## 2. What was measured
 
@@ -149,12 +150,11 @@ the difference to one component without component-level profiling.
 - The Controller and BFF remained healthy after the sustained run, and the DLQ was
   empty at the post-test check.
 
-### Not proven by this report
+### Not proven by the ingress measurements above
 
-- Worker function executions per second
-- End-to-end function completion success rate
-- Submission-to-completion latency
-- Queue drain time
+- Worker function executions per second; these require the separate Section 8 tests
+- End-to-end function completion success rate; measured separately in Section 8
+- Submission-to-completion latency and queue drain; measured separately in Section 8
 - A 650 or 1,400 completed-response RPS result
 - A 500x improvement over a comparable baseline
 
@@ -212,3 +212,29 @@ Remove the temporary generator after testing:
 ```bash
 terraform -chdir=Infra-terraform apply -var='enable_load_generator=false'
 ```
+
+## 8. Worker completion verification
+
+The asynchronous ingress figures above are complemented by public synchronous E2E
+tests of actual function completion on one `t3.micro` Worker.
+
+| Offered load | Duration | Completed result | Worker latency | Public E2E latency | Verdict |
+|---:|---:|---:|---:|---:|---|
+| 1 RPS | 60s | 61/61 successful | avg 430.81ms, p95 479ms | avg 602.65ms, p95 779.73ms | Stable baseline |
+| **3 RPS** | **60s** | **181/181 successful, no drops** | **avg 602.4ms, p95 809ms** | **avg 1.24s, p95 1.67s** | **Highest verified stable rate** |
+| 7 RPS | 30s | 161 Worker completions; 156 before client timeout, 49 not started | avg 988.74ms, p95 1.09s | avg 12.09s, p95 27.13s | Overload |
+
+At 7 offered RPS, the Worker still completed every started execution, but synchronous
+requests accumulated until five exceeded the client timeout and k6 dropped 49
+iterations before start. The result identifies saturation near 3.1 completed
+responses/second; it is not a stable 7 RPS capacity claim.
+
+Temporary phase profiling over 91 successful executions at 3 RPS attributed the
+783.46ms full Worker lifecycle average primarily to container command execution
+(401.83ms), process-baseline validation (126.56ms), trusted runner/SDK injection
+(113.97ms), and output collection (107.34ms). Slot wait, container acquisition, and
+direct cgroup reads were negligible. The integrity controls were retained after the
+measurement.
+
+Full conditions, historical comparison, cross-checks, and interpretation are in the
+[single-Worker E2E report](./tests/results/2026-08-10-worker-e2e-report.md).
