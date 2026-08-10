@@ -20,7 +20,7 @@ chown -R ec2-user:ec2-user /home/ec2-user/faas-worker
 cat <<EOF > /home/ec2-user/faas-worker/.env
 AWS_REGION=${aws_region}
 SQS_URL=${sqs_url}
-BUCKET_NAME=${bucket_name}
+S3_CODE_BUCKET=${bucket_name}
 S3_USER_DATA_BUCKET=${user_data_bucket_name}
 TABLE_NAME=${table_name}
 REDIS_HOST=${redis_host}
@@ -33,17 +33,6 @@ CONTROLLER_URL=http://$CONTROLLER_IP:8080
 EOF
 chown ec2-user:ec2-user /home/ec2-user/faas-worker/.env
 
-# 3. Code Update from S3 (if available, using VPC Endpoint)
-echo "Checking for worker-latest.zip in S3://${bucket_name}..."
-aws s3 cp s3://${bucket_name}/worker-latest.zip /home/ec2-user/worker.zip --region ${aws_region} || true
-if [ -f /home/ec2-user/worker.zip ]; then
-    echo "Found updated code. Unzipping..."
-    # Ensure unzip is available (usually is)
-    unzip -o /home/ec2-user/worker.zip -d /home/ec2-user/faas-worker/
-    chown -R ec2-user:ec2-user /home/ec2-user/faas-worker/
-    rm -f /home/ec2-user/worker.zip
-fi
-
-# 3. Start Agent
+# 3. Start the immutable Worker code baked into the AMI.
 systemctl daemon-reload
 systemctl enable --now faas-worker

@@ -27,10 +27,10 @@ DOCKER_WORK_DIR_ROOT = os.getenv("DOCKER_WORK_DIR_ROOT", "/tmp/faas/workspace")
 
 # --- Docker Images ---
 DOCKER_IMAGES = {
-    "python": os.getenv("DOCKER_PYTHON_IMAGE", "python:3.9"),
-    "cpp": os.getenv("DOCKER_CPP_IMAGE", "gcc:latest"),
-    "nodejs": os.getenv("DOCKER_NODEJS_IMAGE", "node:18-alpine"),
-    "go": os.getenv("DOCKER_GO_IMAGE", "golang:1.19-alpine")
+    "python": os.getenv("DOCKER_PYTHON_IMAGE", "faas-runtime/python:3.11.13"),
+    "cpp": os.getenv("DOCKER_CPP_IMAGE", "faas-runtime/cpp:14.3.0"),
+    "nodejs": os.getenv("DOCKER_NODEJS_IMAGE", "faas-runtime/nodejs:20.19.4"),
+    "go": os.getenv("DOCKER_GO_IMAGE", "faas-runtime/go:1.21.13")
 }
 
 # --- Warm Pool Sizes ---

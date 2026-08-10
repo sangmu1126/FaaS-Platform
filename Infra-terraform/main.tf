@@ -109,8 +109,10 @@ resource "aws_dynamodb_table" "logs_table" {
 
 # 3. SQS Queue for Tasks
 resource "aws_sqs_queue" "task_queue" {
-  name                       = "${var.project_name}-queue"
-  visibility_timeout_seconds = 300    # 5 minutes (Matches Worker Timeout)
+  name = "${var.project_name}-queue"
+  # Worker execution is capped at 300s. Keep an additional two-minute margin
+  # for container acquisition, artifact setup, metrics, and result publishing.
+  visibility_timeout_seconds = 420
   message_retention_seconds  = 345600 # 4 days
   receive_wait_time_seconds  = 20     # Long Polling
 

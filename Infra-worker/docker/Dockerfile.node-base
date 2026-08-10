@@ -1,5 +1,5 @@
 # Dockerfile.node-base
-FROM node:18-alpine
+FROM node:20.19.4-alpine3.22@sha256:df02558528d3d3d0d621f112e232611aecfee7cbc654f6b375765f72bb262799
 
 # Non-root user 생성 (Defense-in-depth)
 RUN adduser -D -s /bin/sh appuser

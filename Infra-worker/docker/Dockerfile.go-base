@@ -1,5 +1,5 @@
 # Dockerfile.go-base
-FROM golang:1.19-alpine
+FROM golang:1.21.13-alpine3.20@sha256:2414035b086e3c42b99654c8b26e6f5b1b1598080d65fd03c7f499552ff4dc94
 
 # 필수 빌드 도구 설치
 RUN apk add --no-cache git make build-base
