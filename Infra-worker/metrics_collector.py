@@ -134,6 +134,7 @@ class MetricsCollector:
                     host_ram_mb=int(total_mb), 
                     reserved_mb=int(reserved_mb), 
                     concurrency_limit=limit)
+        self.concurrency_limit = limit
         return threading.Semaphore(limit)
 
     def analyze_execution(self, metrics: dict):

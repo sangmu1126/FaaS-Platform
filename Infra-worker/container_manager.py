@@ -6,6 +6,8 @@ import os
 import io
 import tarfile
 import shlex
+import socket
+import shutil
 from collections import deque
 from pathlib import Path
 from typing import Dict, Optional, List
@@ -26,8 +28,10 @@ class ContainerManager:
             "python": deque(), "cpp": deque(), "nodejs": deque(), "go": deque()
         }
         
-        # Function-specific Warm Pool (Secure & Fast)
-        self.function_pools = {} # Key: function_id, Value: List[Container]
+        # Artifact-specific Warm Pool (function + runtime + deployed S3 key).
+        # A function ID survives code updates, so it is not a safe pool key by
+        # itself: reusing it could execute an older deployment.
+        self.function_pools = {}
         
         # Locks
         self.function_pool_lock = threading.Lock()
@@ -69,6 +73,7 @@ class ContainerManager:
                 # Use Docker's tiny init as PID 1 so orphaned children are
                 # adopted and reaped instead of accumulating as zombies.
                 init=True,
+                read_only=True,
                 network_mode="bridge",
                 mem_limit="1024m",
                 cpu_quota=100000,
@@ -78,7 +83,8 @@ class ContainerManager:
                 pids_limit=128,
                 tmpfs={
                     "/workspace": "rw,nosuid,nodev,exec,size=256m,mode=1777",
-                    "/output": "rw,nosuid,nodev,exec,size=256m,mode=1777"
+                    "/output": "rw,nosuid,nodev,exec,size=256m,mode=1777",
+                    "/tmp": "rw,nosuid,nodev,exec,size=128m,mode=1777"
                 }
             )
             c.pause()
@@ -120,7 +126,26 @@ class ContainerManager:
             )
             return None
 
-    def acquire_container(self, runtime: str, function_id: str = None):
+    @staticmethod
+    def _function_pool_key(function_id: str, runtime: str, artifact_id: str):
+        return function_id, runtime, artifact_id
+
+    def _discard_stale_function_pools(self, function_id: str, runtime: str, artifact_id: str):
+        """Remove containers belonging to superseded deployments."""
+        active_key = self._function_pool_key(function_id, runtime, artifact_id)
+        stale_containers = []
+        with self.function_pool_lock:
+            stale_keys = [
+                key for key in self.function_pools
+                if key[0] == function_id and key != active_key
+            ]
+            for key in stale_keys:
+                stale_containers.extend(self.function_pools.pop(key))
+
+        for stale in stale_containers:
+            self.discard_container(stale)
+
+    def acquire_container(self, runtime: str, function_id: str = None, artifact_id: str = ""):
         """
         Acquire container with priority:
         1. Function-specific warm pool
@@ -130,9 +155,11 @@ class ContainerManager:
         
         # 1. Warm Pool Check
         if function_id:
+            self._discard_stale_function_pools(function_id, target_runtime, artifact_id)
+            pool_key = self._function_pool_key(function_id, target_runtime, artifact_id)
             with self.function_pool_lock:
-                if function_id in self.function_pools and self.function_pools[function_id]:
-                    container = self.function_pools[function_id].pop()
+                if pool_key in self.function_pools and self.function_pools[pool_key]:
+                    container = self.function_pools[pool_key].pop()
                     # Warm Pool items are recycling/running, no need to unpause
                     # try:
                     #     container.unpause()
@@ -167,16 +194,17 @@ class ContainerManager:
             c.is_warm = False
             return c
         except Exception:
-            return self.acquire_container(runtime, function_id)
+            return self.acquire_container(runtime, function_id, artifact_id)
 
-    def release_container(self, container, function_id: str):
+    def release_container(self, container, function_id: str, runtime: str, artifact_id: str = ""):
         """Return container to function-specific pool."""
         try:
+            pool_key = self._function_pool_key(function_id, runtime, artifact_id)
             with self.function_pool_lock:
-                if function_id not in self.function_pools:
-                    self.function_pools[function_id] = []
+                if pool_key not in self.function_pools:
+                    self.function_pools[pool_key] = []
                 
-                pool = self.function_pools[function_id]
+                pool = self.function_pools[pool_key]
                 
                 if len(pool) >= config.MAX_POOL_SIZE_PER_FUNC:
                     oldest = pool.pop(0)
@@ -259,29 +287,52 @@ class ContainerManager:
             else:
                 tar.add(source_path, arcname=source_path.name)
 
-        # Docker's archive API writes to the container root filesystem rather
-        # than through a tmpfs mount. Stage the archive in /tmp, then copy it
-        # into the mounted workspace from inside the container namespace.
-        staging_path = "/tmp/faas-archive-staging"
-        container.exec_run(["rm", "-rf", staging_path], user="0")
-        container.exec_run(["mkdir", "-p", staging_path], user="0")
-        container.exec_run(["mkdir", "-p", target_path], user="0")
-        copied = container.put_archive(staging_path, stream.getvalue())
-        if not copied:
-            raise RuntimeError(f"Docker rejected archive copy for {target_path}")
+        # Docker's archive-copy endpoint rejects containers whose rootfs is
+        # read-only, even when the destination itself is a writable tmpfs.
+        # Stream the archive through exec stdin and extract it from inside the
+        # container namespace instead. User code never receives a host mount.
+        self._extract_archive_via_exec(
+            container,
+            stream.getvalue(),
+            target_path,
+            user="65534:65534"
+        )
 
-        copy_command = [
-            "sh",
-            "-c",
-            f"cp -R {shlex.quote(staging_path)}/. {shlex.quote(target_path)}/"
-        ]
-        result = container.exec_run(copy_command, user="65534:65534")
-        exit_code = getattr(result, "exit_code", result[0] if isinstance(result, tuple) else -1)
-        container.exec_run(["rm", "-rf", staging_path], user="0")
+    def _extract_archive_via_exec(self, container, archive_bytes: bytes, target_path: str, user: str):
+        api = self.docker.api
+        created = api.exec_create(
+            container.id,
+            ["tar", "-xf", "-", "-C", target_path],
+            stdin=True,
+            stdout=True,
+            stderr=True,
+            user=user
+        )
+        exec_id = created.get("Id") if isinstance(created, dict) else created
+        if not exec_id:
+            raise RuntimeError(f"Docker failed to create archive extraction exec for {target_path}")
+
+        stream = api.exec_start(exec_id, socket=True)
+        raw_socket = getattr(stream, "_sock", stream)
+        output = bytearray()
+        try:
+            raw_socket.sendall(archive_bytes)
+            raw_socket.shutdown(socket.SHUT_WR)
+            while True:
+                chunk = raw_socket.recv(64 * 1024)
+                if not chunk:
+                    break
+                output.extend(chunk)
+        finally:
+            stream.close()
+
+        inspection = api.exec_inspect(exec_id)
+        exit_code = inspection.get("ExitCode")
         if exit_code != 0:
-            output = getattr(result, "output", result[1] if isinstance(result, tuple) else b"")
-            detail = output.decode("utf-8", errors="replace").strip() if isinstance(output, bytes) else str(output)
-            raise RuntimeError(f"Failed to copy staged files to {target_path}: {detail}")
+            detail = bytes(output).decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"Failed to extract archive into {target_path}: {detail or f'exit code {exit_code}'}"
+            )
 
     def verify_files_readable(self, container, file_paths: List[str], user: str = "65534:65534"):
         """Fail if any required runtime file is missing or unreadable in a container."""
@@ -299,39 +350,57 @@ class ContainerManager:
             raise RuntimeError(f"Required container files are unavailable: {detail or file_paths}")
 
     def copy_from_container(self, container, source_path: str, target_local_path: Path):
-        staging_root = "/tmp/faas-output-staging"
-        staging_path = f"{staging_root}/output"
+        temp_tar = target_local_path / "temp_output.tar"
         try:
-            container.exec_run(["rm", "-rf", staging_root], user="0")
-            container.exec_run(["mkdir", "-p", staging_path], user="0")
-            container.exec_run(["chmod", "1777", staging_path], user="0")
-            copy_result = container.exec_run(
-                ["sh", "-c", f"cp -R {shlex.quote(source_path)}/. {staging_path}/"],
+            # Docker get_archive cannot see files created inside a tmpfs when
+            # the container rootfs is read-only. Create the tar from inside
+            # the namespace and stream its stdout back to the host instead.
+            archive_result = container.exec_run(
+                ["tar", "-cf", "-", "-C", source_path, "."],
+                stream=True,
                 user="65534:65534"
             )
-            exit_code = getattr(
-                copy_result,
-                "exit_code",
-                copy_result[0] if isinstance(copy_result, tuple) else -1
+            output_stream = getattr(
+                archive_result,
+                "output",
+                archive_result[1] if isinstance(archive_result, tuple) else archive_result
             )
-            if exit_code != 0:
-                raise RuntimeError(f"Failed to stage container output from {source_path}")
-
-            stream, stat = container.get_archive(staging_path)
-            temp_tar = target_local_path / "temp_output.tar"
             with open(temp_tar, "wb") as f:
-                for chunk in stream:
+                for chunk in output_stream:
                     f.write(chunk)
             with tarfile.open(temp_tar, mode='r') as tar:
-                tar.extractall(path=target_local_path)
-            temp_tar.unlink()
+                self._extract_output_tar_safely(tar, target_local_path)
         except Exception as e:
             logger.warning("Failed to copy from container", error=str(e))
         finally:
             try:
-                container.exec_run(["rm", "-rf", staging_root], user="0")
-            except Exception:
+                temp_tar.unlink()
+            except OSError:
                 pass
+
+    @staticmethod
+    def _extract_output_tar_safely(archive: tarfile.TarFile, target_dir: Path):
+        """Extract regular files/directories without trusting user tar metadata."""
+        root = Path(target_dir).resolve()
+        for member in archive.getmembers():
+            destination = (root / member.name).resolve()
+            try:
+                destination.relative_to(root)
+            except ValueError as exc:
+                raise ValueError(f"Unsafe output path: {member.name}") from exc
+
+            if member.isdir():
+                destination.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise ValueError(f"Unsupported output entry: {member.name}")
+
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is None:
+                raise ValueError(f"Unreadable output entry: {member.name}")
+            with source, open(destination, "wb") as output_file:
+                shutil.copyfileobj(source, output_file)
 
     def get_cgroup_cpu_usage(self, container_id: str) -> int:
         """Returns CPU usage in microseconds from cgroup v2"""

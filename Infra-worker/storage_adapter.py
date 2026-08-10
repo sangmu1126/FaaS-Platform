@@ -1,6 +1,7 @@
 import os
 import shutil
 import zipfile
+import hashlib
 import boto3
 import redis
 import structlog
@@ -43,7 +44,12 @@ class StorageAdapter:
         
         zip_path = local_dir / "code.zip"
         bucket = s3_bucket if s3_bucket else config.S3_CODE_BUCKET
-        cache_key = f"code:{function_id}"
+        # A function ID is stable across code updates, while the S3 object key
+        # identifies the deployed artifact. Include both bucket and key so a
+        # new deployment can never receive a cached ZIP from an older version.
+        artifact_id = f"{bucket}/{s3_key}"
+        artifact_hash = hashlib.sha256(artifact_id.encode("utf-8")).hexdigest()
+        cache_key = f"code:{function_id}:{artifact_hash}"
         
         # 1. Try Redis cache
         cache_hit = False
@@ -85,7 +91,9 @@ class StorageAdapter:
         with zipfile.ZipFile(zip_path, "r") as zf:
             for member in zf.namelist():
                 target_path = (target_dir / member).resolve()
-                if not str(target_path).startswith(str(target_dir.resolve())):
+                try:
+                    target_path.relative_to(target_dir.resolve())
+                except ValueError:
                     logger.warning("Zip Slip attempt detected", file=member)
                     continue
                 

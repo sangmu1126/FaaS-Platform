@@ -47,6 +47,13 @@ class InfraAgent:
         
         # Execution engine (includes Warm Pool)
         self.executor = TaskExecutor(self.config)
+        # Reserve execution capacity before receiving SQS messages. Without
+        # this gate, messages move from visible backlog to in-flight threads
+        # faster than the Worker can execute them, weakening ASG backlog
+        # signals and creating an unbounded number of host threads.
+        self.dispatch_slots = threading.BoundedSemaphore(
+            self.executor.metrics.concurrency_limit
+        )
         self.running = True
         self._start_time = time.time()  # For uptime tracking
 
@@ -83,24 +90,42 @@ class InfraAgent:
         threading.Thread(target=self._heartbeat_push, daemon=True).start()
 
         while self.running:
+            reserved_slots = 0
             try:
+                if not self.dispatch_slots.acquire(timeout=1):
+                    continue
+                reserved_slots = 1
+                while reserved_slots < 10 and self.dispatch_slots.acquire(blocking=False):
+                    reserved_slots += 1
+
                 # SQS Poll
                 resp = self.sqs.receive_message(
                     QueueUrl=queue_url,
-                    MaxNumberOfMessages=10, # Batch fetching (Parallelism key)
+                    MaxNumberOfMessages=reserved_slots,
                     WaitTimeSeconds=20
                 )
 
-                if "Messages" not in resp:
+                messages = resp.get("Messages", [])
+                for _ in range(reserved_slots - len(messages)):
+                    self.dispatch_slots.release()
+                reserved_slots = len(messages)
+
+                if not messages:
                     continue
 
-                for msg in resp["Messages"]:
+                for msg in messages:
                     # Dispatch to thread for parallel processing
                     threading.Thread(target=self._process_message, args=(queue_url, msg)).start()
+                    reserved_slots -= 1
 
             except Exception as e:
                 logger.error("Polling loop error", error=str(e))
                 time.sleep(1)
+            finally:
+                # Release only reservations that were not handed to a worker
+                # thread. Each dispatched task releases its own slot.
+                for _ in range(reserved_slots):
+                    self.dispatch_slots.release()
         
         logger.info("👋 Agent stopped cleanly")
 
@@ -172,6 +197,7 @@ class InfraAgent:
             
         finally:
             self.active_jobs.dec()
+            self.dispatch_slots.release()
 
     def _publish_system_status(self):
         """

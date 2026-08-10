@@ -62,7 +62,9 @@ class TaskExecutor:
         try:
             # Acquire Container
             try:
-                container = self.containers.acquire_container(task.runtime, task.function_id)
+                container = self.containers.acquire_container(
+                    task.runtime, task.function_id, task.s3_key
+                )
             except Exception as e:
                 logger.error("Failed to acquire container", error=str(e))
                 raise e
@@ -241,7 +243,9 @@ class TaskExecutor:
             # Reuse only containers that completed setup and execution safely.
             if container:
                 if container_reusable:
-                    self.containers.release_container(container, task.function_id)
+                    self.containers.release_container(
+                        container, task.function_id, task.runtime, task.s3_key
+                    )
                 else:
                     self.containers.discard_container(container)
 
@@ -264,6 +268,10 @@ class TaskExecutor:
             "MEMORY_MB": str(task.memory_mb),
             "LLM_MODEL": task.model_id,
             "OUTPUT_DIR": "/output",
+            # Runtime and compiler caches must use writable tmpfs because the
+            # container root filesystem is read-only.
+            "HOME": "/tmp",
+            "TMPDIR": "/tmp",
             "AI_ENDPOINT": config.AI_ENDPOINT  # For faas_sdk
         }
         
