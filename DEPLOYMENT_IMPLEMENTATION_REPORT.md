@@ -37,7 +37,7 @@ outbound 통신을 위해 유지하지만 Security Group에서 public `:8080` in
 
 | 왜 | 무엇을 | 어떻게 | 확인 결과 |
 |---|---|---|---|
-| 업로드 성공 후에도 `runner.py`를 찾지 못함 | Worker 파일 주입과 실행 전 검증 | tmpfs 외부 staging 후 container namespace 내부 복사 | cold/warm 모두 `SUCCESS` |
+| 업로드 성공 후에도 `runner.py`를 찾지 못함 | Worker 파일 주입과 실행 전 검증 | Docker exec stdin tar stream을 container tmpfs 내부에서 직접 해제 | read-only rootfs 통합 probe 통과 |
 | 실패한 실행 환경이 warm pool에 남을 수 있음 | 컨테이너 재사용 정책 | 주입·검증·실행 실패 시 즉시 폐기 | 실패 경로 단위 테스트 통과 |
 | 실행 metric 전송이 IAM에서 거부됨 | Worker role 권한 | `FaaS/FunctionRunner`에만 `PutMetricData` 허용 | `PeakMemoryBytes` 생성 확인 |
 | 새 AMI가 기존 인스턴스를 자동 교체하지 않음 | ASG Launch Template 참조 | `$Latest` 대신 concrete latest version 사용 | rolling refresh 100% 성공 |
@@ -228,10 +228,12 @@ ASG 교체 후에도 같은 응답을 확인했다. 관련 커밋은 `75c3ba86`�
 
 **어떻게:** Docker `put_archive('/workspace', ...)`는 성공을 반환했지만
 `/workspace`가 tmpfs mount라 archive가 기록된 container lower layer를 가렸다.
-따라서 archive를 먼저 일반 root filesystem의 `/tmp/faas-archive-staging`에 풀고,
-컨테이너 namespace 안에서 비특권 사용자로 `cp -R`하여 tmpfs에 기록한다. 이후
-`runner.py`, `sdk.py`, `main.py`를 실제로 읽을 수 있는지 검사하며, 어느 단계든
-실패한 컨테이너는 warm pool로 반환하지 않고 폐기한다.
+초기에는 root filesystem의 staging 경로를 거쳤지만, rootfs를 read-only로 강화하면
+Docker archive API 자체가 복사를 거부한다. 최종 구조는 Docker exec의 stdin으로 tar
+stream을 전달하고 UID/GID 65534 프로세스가 `/workspace` tmpfs 안에서 직접 해제한다.
+host bind mount와 writable container rootfs가 모두 필요 없다. 이후 `runner.py`,
+`sdk.py`, `main.py`를 실제로 읽을 수 있는지 검사하며, 어느 단계든 실패한 컨테이너는
+warm pool로 반환하지 않고 폐기한다.
 
 ```mermaid
 flowchart LR
@@ -242,9 +244,9 @@ flowchart LR
         F1 --> E1[Execution failed]
     end
 
-    subgraph After["After: namespace-aware injection"]
-        A2[Host tar archive] -->|put_archive| S["/tmp/faas-archive-staging"]
-        S -->|"exec as UID/GID 65534: cp -R"| W["/workspace tmpfs"]
+    subgraph After["After: read-only rootfs injection"]
+        A2[Host tar archive] -->|Docker exec stdin| S["tar process\nUID/GID 65534"]
+        S -->|extract inside namespace| W["/workspace tmpfs"]
         W --> V{"runner.py · sdk.py · main.py readable?"}
         V -- Yes --> E2[Execute and recycle]
         V -- No --> D[Discard container]
@@ -300,8 +302,9 @@ latency로 오해할 수 있었다.
 
 **어떻게:** `runner.py`가 `perf_counter_ns()`로 handler 호출 전후를 측정하고
 platform 전용 JSON 파일에 nanosecond 값을 기록한다. `/output`도 tmpfs이므로
-Worker는 container namespace 안에서 결과를 일반 root filesystem staging 경로로
-복사한 후 Docker archive API로 회수한다. 예약 파일은 `handlerDurationMs`로 변환한
+Worker는 container namespace 안에서 `tar`를 실행하고 stdout stream으로 결과를
+회수한 뒤 host에서 일반 파일과 directory만 안전하게 해제한다. 예약 파일은
+`handlerDurationMs`로 변환한
 직후 삭제해 사용자 output 목록과 S3 upload에는 포함하지 않는다. Controller는
 실행 log와 `function_handler_duration_seconds` Prometheus histogram에 별도로
 저장하고, UI는 Handler Time, Worker Processing, Client E2E를 각각 표시한다.
@@ -398,9 +401,9 @@ flowchart TD
     Rediscover --> WorkerRefresh[Worker AMI and rolling refresh]
     HeartbeatFail -- No --> InjectFail{Runtime files visible?}
     WorkerRefresh --> InjectFail
-    InjectFail -- No --> Stage[Stage archive outside tmpfs]
-    Stage --> Copy[Copy inside container namespace]
-    Copy --> Validate[Validate required files]
+    InjectFail -- No --> Stream[Stream tar through Docker exec stdin]
+    Stream --> Extract[Extract directly into tmpfs]
+    Extract --> Validate[Validate required files]
     Validate --> AMIBuild[Build new Worker AMI]
     InjectFail -- Yes --> AMIBuild
     AMIBuild --> VersionFail{ASG refresh started?}
@@ -420,7 +423,7 @@ flowchart TD
 | Controller cloud-init 실패 | `$HOME` 없는 root에서 global git config | baked app 우선, `npm ci` | cloud-init `done`, PM2 online |
 | Worker heartbeat 실패 | 교체 전 private IP 고정 | SSM endpoint 재조회 | Worker registry healthy |
 | `Cannot GET /` | Express root route 부재 | discovery route 추가 | 새 AMI 교체 후 JSON 응답 |
-| `/workspace/runner.py` 없음 | archive가 tmpfs 아래 lower layer에 기록됨 | staging 후 namespace 내부 복사 | cold/warm 함수 `SUCCESS` |
+| `/workspace/runner.py` 없음 | archive가 tmpfs 아래 lower layer에 기록됨 | exec stdin tar stream을 tmpfs 내부에서 해제 | read-only rootfs probe 성공 |
 | CloudWatch `AccessDenied` | Worker role에 custom metric 권한 없음 | namespace 제한 `PutMetricData` 허용 | `PeakMemoryBytes` 조회 성공 |
 | 새 AMI인데 기존 Worker 유지 | ASG가 문자열 `$Latest`를 참조 | 구체적인 LT version 참조 | instance refresh 100% 성공 |
 
@@ -462,7 +465,7 @@ sequenceDiagram
     Controller->>SQS: Enqueue task
     Worker->>SQS: Long-poll task
     Worker->>S3: Download function package
-    Worker->>Worker: Stage → tmpfs copy → file validation
+    Worker->>Worker: Tar stream → tmpfs extraction → file validation
     Worker->>Worker: Execute in warm container
     Worker->>Redis: Publish execution result
     Worker->>CloudWatch: Put PeakMemoryBytes

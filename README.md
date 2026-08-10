@@ -135,7 +135,8 @@ high-availability request plane in which multiple Controllers serve traffic conc
 - Support Python, Node.js, C++, and Go runtimes
 - Maintain runtime warm pools and reuse per-function containers
 - Run as UID/GID 65534 with Linux capabilities removed, `no-new-privileges`, and PID limits
-- Deliver code through `/workspace` and `/output` tmpfs mounts and Docker archive copy
+- Keep the container root filesystem read-only and stream code into writable
+  `/workspace` and `/output` tmpfs mounts without exposing a host bind mount
 - Collect CPU, peak memory, and disk I/O by reading Cgroup v2 directly
 - Collect network usage from container network statistics
 - Upload execution results and generated files to S3 asynchronously

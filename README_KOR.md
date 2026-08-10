@@ -132,7 +132,8 @@ Controller ASG는 `min=1`, `max=1`입니다. 자동 복구는 제공하지만 �
 - Python, Node.js, C++, Go runtime 지원
 - Runtime warm pool 유지 및 함수별 container 재사용
 - UID/GID 65534 실행, Linux capability 제거, `no-new-privileges`, PID 제한
-- `/workspace`, `/output` tmpfs mount와 Docker archive copy로 코드 전달
+- Container root filesystem을 read-only로 유지하고 host bind mount 노출 없이
+  tar stream으로 `/workspace`, `/output` tmpfs에 코드 전달
 - Cgroup v2 직접 조회를 통한 CPU, peak memory, disk I/O 수집
 - Container network 통계에서 network 사용량 수집
 - 실행 결과와 생성 파일을 S3에 비동기 업로드
